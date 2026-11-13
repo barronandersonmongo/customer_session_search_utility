@@ -144,6 +144,14 @@ Grove receives OpenAI-style requests with `model`, `messages`, and `max_completi
 
 ### Run
 
+For convenient command-line access, link the built executable into your user bin directory:
+
+```sh
+ln -s /home/barry/barry_tools/barry_customer_session_search_utility/build/bfind /home/barry/.local/bin/bfind
+```
+
+With `/home/barry/.local/bin` on PATH, run `bfind "vector search"` from any directory. The link follows subsequent rebuilds at the same location; moving or deleting the build directory breaks it. Configuration still comes from the default user location or an explicit `--env FILE`.
+
 From the repository directory, using configuration at the default user location (or environment variables):
 
 ```sh
