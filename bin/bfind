@@ -1,0 +1,4 @@
+#!/bin/sh
+# The executable loads the config itself; never source credentials in the shell.
+exec /home/barry/barry_tools/barry_customer_session_search_utility/build/bfind \
+    --env /home/barry/barry_tools/barry_customer_session_search_utility/.env "$@"

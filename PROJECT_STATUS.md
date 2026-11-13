@@ -6,7 +6,7 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
-- Created `/home/barry/.local/bin/bfind` as a symlink to the repository's `build/bfind` executable and verified `--help` through the link. No search or LLM request was run for this installation.
+- `/home/barry/.local/bin/bfind` now links to the tracked `bin/bfind` launcher, which executes `build/bfind` with the absolute project `.env` path. Verified shell syntax and traced --help from /tmp to confirm the argument without reading the config. No credentials are embedded or sourced; no note search or API request was run.
 - Hardened terminal presentation, restricted curl inheritance with a TLS 1.2 minimum while preserving company proxy/CA settings, and enabled supported build hardening with an enforced minimum Boost version. No usage audit or persistent usage log was introduced.
 
 - Enforced the user's fixed search root `/home/barry/GoogleDrive/Builder Relations/Customers/`. --root is rejected, and SEARCH_ROOT is accepted only as an unused legacy setting equal to that exact literal. Other values fail before search or API requests. Launching from other working directories remains allowed.

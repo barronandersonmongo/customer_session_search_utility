@@ -46,6 +46,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Preserve `--env FILE` as an explicit trusted-file selection, including relative paths. Missing config files are allowed; environment variables override API file values individually; no config or environment setting may redirect the search root.
 - Check permissions and ownership with `fstat()` on the same descriptor used to read the configuration. Warn once and continue if mode has any `077` bits or ownership differs from the effective user; do not expose values or paths in the warning. Reject nonregular config files.
 - Maintain a credential-free `.env.example`. Do not read, move, or overwrite the real project `.env` for migration; document user-run migration or explicit `--env` instructions instead.
+- The installed user-bin symlink points to `bin/bfind`, a launcher that supplies the trusted absolute project `.env` path to the executable via --env. Keep credentials out of the launcher, never source the file, and forward arguments with quoted "$@". Direct execution of build/bfind retains the default XDG configuration behavior unless --env is supplied.
 - Current variable names are `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`. SEARCH_ROOT is obsolete except for accepting the exact fixed legacy literal without using it.
 - The chosen model is `gpt-6-astra`. Preserve this selection unless the user changes it; keep it configurable.
 - Use the `api-key` header for Grove authentication.

@@ -144,13 +144,13 @@ Grove receives OpenAI-style requests with `model`, `messages`, and `max_completi
 
 ### Run
 
-For convenient command-line access, link the built executable into your user bin directory:
+For convenient command-line access with the existing project configuration, link the repository launcher into your user bin directory:
 
 ```sh
-ln -s /home/barry/barry_tools/barry_customer_session_search_utility/build/bfind /home/barry/.local/bin/bfind
+ln -s /home/barry/barry_tools/barry_customer_session_search_utility/bin/bfind /home/barry/.local/bin/bfind
 ```
 
-With `/home/barry/.local/bin` on PATH, run `bfind "vector search"` from any directory. The link follows subsequent rebuilds at the same location; moving or deleting the build directory breaks it. Configuration still comes from the default user location or an explicit `--env FILE`.
+With `/home/barry/.local/bin` on PATH, run `bfind "vector search"` from any directory. The launcher executes the repository's `build/bfind` with `--env /home/barry/barry_tools/barry_customer_session_search_utility/.env` and forwards your arguments unchanged. It contains no credentials and never sources the file; the executable parses it normally. Rebuilds at the same location are picked up automatically. Moving the repository or deleting the build directory breaks the launcher. The installed symlink now points to this launcher.
 
 From the repository directory, using configuration at the default user location (or environment variables):
 
