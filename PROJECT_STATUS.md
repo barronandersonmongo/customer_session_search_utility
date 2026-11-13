@@ -30,9 +30,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 118 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 119 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Verbose matching-line text: Release configure/build and all four suites passed (118 integration passes, one root-only ownership skip, plus native suites). Each displayed result now includes up to three retained matching note lines with session-relative filenames and line numbers, bounded by the existing 1,200-byte retention limit and escaped for terminal safety. This supersedes the earlier omission of matching note bodies from verbose explanations. Tests verify actual matching text, the three-line cap, Unicode-control escaping, omission of nonmatching context, and unchanged ordinary stdout. Uses existing in-memory ripgrep text, with no extra file reads or LLM requests. No real `.env`, customer-note contents, or live API calls were used. Private usage notes updated locally and remain ignored.
 
 - Immediate letter selections replace numeric labels and input. Result labels use a–p and r–z (q reserved for quit), accept either case, and open without Enter; Enter defaults to a. The maximum displayed results is now 25. Release configure/build and all four suites passed (117 integration passes, one root-only ownership skip, plus native suites). Pty tests cover lowercase/uppercase immediate opening, tenth selection, skipping q, invalid-key retries, default Enter, q/Q quit, and terminal restoration on success, interruption, and launch failure. Existing ranking/output expectations now use letters. Private usage notes updated locally and remain ignored. No real `.env`, customer notes, live API calls, or real Dolphin windows were used. This supersedes the earlier numeric-selection/backspace behavior.
 

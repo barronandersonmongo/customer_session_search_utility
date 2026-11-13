@@ -384,7 +384,21 @@ class Integration(unittest.TestCase):
         self.assertIn('sample matching locations (up to 3)=["notes.txt:1"]', result.stderr)
         self.assertIn('phrase bonus 50', result.stderr)
         self.assertIn('is an unverified local match, ordered by local score', result.stderr)
-        self.assertNotIn('PRIVATE_NOTE_MARKER', result.stderr)
+        self.assertIn('matching line: notes.txt:1: vector PRIVATE_NOTE_MARKER', result.stderr)
+
+    def test_verbose_matching_lines_are_bounded_and_terminal_safe(self):
+        self.ranking_fixture([])
+        self.note('Evidence', 'vector first\u202e\nvector second\nvector third\nvector fourth\ncontext only marker\n')
+        verbose = self.run_app('--verbose', '--local-only', 'vector')
+        self.assertIn('matching line: notes.txt:1: vector first', verbose.stderr)
+        self.assertNotIn('\u202e', verbose.stderr)
+        self.assertIn('matching line: notes.txt:3: vector third', verbose.stderr)
+        self.assertEqual(verbose.stderr.count('matching line:'), 3)
+        self.assertNotIn('vector fourth', verbose.stderr)
+        self.assertNotIn('context only marker', verbose.stderr)
+        normal = self.run_app('--local-only', 'vector')
+        self.assertEqual(normal.stdout, verbose.stdout)
+        self.assertNotIn('vector first', normal.stderr + normal.stdout)
 
     def test_verbose_maps_displayed_results_to_source_and_model_rating(self):
         result = self.run_app('--verbose', 'Vector Search')

@@ -298,7 +298,7 @@ struct Candidate {
     std::string reference_date;
     bool reference_year_only = false;
     std::vector<std::string> note_terms, missing_note_terms, path_terms, submitted_terms;
-    std::vector<std::string> match_locations;
+    std::vector<std::string> match_locations, matching_lines;
     bool note_phrase = false, path_phrase = false;
     int rarity_score = 0, phrase_score = 0, hit_score = 0;
 };
@@ -450,7 +450,11 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& pro
             note_text += line;
             if (opt.verbose && c.match_locations.size() < 3 &&
                 std::any_of(words.begin(), words.end(), [&](const std::string& term) { return line.find(term) != std::string::npos; }))
-                c.match_locations.push_back(file.first + ":" + std::to_string(l.first));
+                {
+                const std::string location = file.first + ":" + std::to_string(l.first);
+                c.match_locations.push_back(location);
+                c.matching_lines.push_back(location + ": " + l.second);
+            }
         }
         const std::string searchable = path_text + note_text;
         if (opt.verbose) {
@@ -686,7 +690,8 @@ void explain_result(size_t position, const Result& result, const Candidate& cand
                     bool local_only, const Progress& progress) {
     const std::string label = "Result " + std::string(1, folder_selection_keys[position - 1]) + " (candidate " + std::to_string(result.id + 1) + ")";
     progress.log(label + ": source=" + clean(candidate.identity));
-    progress.log(label + " sample matching locations (up to 3)=" + term_list(candidate.match_locations) + ". Note contents omitted.");
+    progress.log(label + " sample matching locations (up to 3)=" + term_list(candidate.match_locations) + ".");
+    for (const auto& line : candidate.matching_lines) progress.log(label + " matching line: " + clean(line));
     progress.log(label + " retained note terms=" + term_list(candidate.note_terms) +
                  "; missing in notes=" + term_list(candidate.missing_note_terms) +
                  "; folder terms=" + term_list(candidate.path_terms) +
