@@ -48,6 +48,9 @@ else:
     if 'EXPECTED_EXACT_CANDIDATES' in os.environ:
         assert len(candidates) == int(os.environ['EXPECTED_EXACT_CANDIDATES'])
     assert all(len(c['excerpts'].encode()) <= 3000 for c in candidates)
+    if 'LEGACY_MARKERS' in os.environ:
+        markers = json.loads(os.environ['LEGACY_MARKERS'])
+        assert all(sum(marker in c['excerpts'] for marker in markers) == 1 for c in candidates)
     for c in candidates:
         for text in json.loads(os.environ.get('EXPECTED_EXCERPT_TEXT', '{}')).get(Path(c['folder']).name, []):
             assert text in c['excerpts']
@@ -343,7 +346,7 @@ class Integration(unittest.TestCase):
         self.env['EXPECTED_CANDIDATES'] = '1'
         self.note('Large', ('Vector Search ' + 'x' * 500 + '\n') * 80)
         result = self.run_app('--candidates', '1', '--limit', '1', 'Vector Search')
-        self.assertIn('top 1 matching folders', result.stderr)
+        self.assertIn('top 1 matching candidates', result.stderr)
         self.assertEqual(result.stdout.count('\n   '), 1)
 
     def test_stopwords_do_not_retrieve_unrelated_notes(self):
@@ -370,7 +373,7 @@ class Integration(unittest.TestCase):
         for i in range(41): self.note('Session' + str(i), 'Vector Search\nDelivered: 2025-09-14\n')
         self.env['EXPECTED_EXACT_CANDIDATES'] = '40'
         result = self.run_app('Vector Search')
-        self.assertIn('top 40 matching folders', result.stderr)
+        self.assertIn('top 40 matching candidates', result.stderr)
 
     def test_filtered_terms_are_used_by_coverage_cap(self):
         self.coverage_fixture('alpha\n', 'alpha exercise one\nalpha exercise two\n')
@@ -378,7 +381,7 @@ class Integration(unittest.TestCase):
 
     def session_tree(self):
         self.ranking_fixture([])
-        session = self.root / 'Acme' / '2025-09-14'
+        session = self.root / 'Acme' / '2025' / '2025-09-14 - Vector Search'
         for subdir, marker in (('notes', 'Notebook material'), ('slides', 'Slide text material')):
             folder = session / subdir
             folder.mkdir(parents=True)
@@ -405,6 +408,28 @@ class Integration(unittest.TestCase):
         self.assertEqual(result.stdout.count('\n   '), 2)
         self.assertIn(str(first), result.stdout)
         self.assertIn(str(second), result.stdout)
+
+    def test_loose_year_notes_are_independent_candidates(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2025'
+        year.mkdir(parents=True)
+        for i, marker in enumerate(('LegacyOne', 'LegacyTwo'), 1):
+            (year / ('2025-01-0' + str(i) + ' Notes.txt')).write_text('Vector Search\n' + marker + '\n')
+        self.env['EXPECTED_EXACT_CANDIDATES'] = '2'
+        self.env['LEGACY_MARKERS'] = json.dumps(['LegacyOne', 'LegacyTwo'])
+        result = self.run_app('Vector Search')
+        self.assertEqual(result.stdout.count('\n   '), 2)
+        self.assertEqual(result.stdout.count(str(year)), 2)
+
+    def test_session_without_year_folder_still_groups_documents(self):
+        self.ranking_fixture([])
+        folder = self.root / 'Acme' / '2025-09-14 - Workshop'
+        (folder / 'slides').mkdir(parents=True)
+        (folder / 'notes.txt').write_text('Vector Search notes\n')
+        (folder / 'slides' / 'text.md').write_text('Vector Search slide text\n')
+        self.env['EXPECTED_EXACT_CANDIDATES'] = '1'
+        result = self.run_app('Vector Search')
+        self.assertIn(str(folder), result.stdout)
 
     def test_root_option_is_rejected(self):
         for executable in (BINARY, PRODUCTION_BINARY):

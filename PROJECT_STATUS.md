@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 78 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 80 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Year/session grouping correction: configure/build and both CTest suites passed (79 integration passes, one root-only ownership skip, plus native process checks). Tests use the actual customer/year/dated-topic layout with nested same-named documents, separate sessions within one year, independent loose year notes sharing a folder, and dated sessions without a year directory. Candidate identity is separate from the folder to open; the prompt keeps legacy note IDs distinct. Fixed-root tests continue to pass. Synthetic data only; no real note contents or `.env` accessed.
 
 - Fixed-root restriction: configure/build and both CTest suites passed (77 integration passes, one root-only ownership skip, plus native process checks). Production and fixture executables reject CLI/config/environment root redirection; tests include empty, parent-traversal, and HOME-like config values. The exact legacy literal remains compatible without routing. Tests now use a separate, non-installed executable with a fixed compile-time build-directory fixture root and no runtime root override. The production target remains fixed to the customer folder. No real customer-note contents or real `.env` were accessed; API calls were mocked.
 
@@ -66,7 +68,7 @@ The executable is `build/bfind`. Verified build and offline-test commands are in
 
 ## Remaining validation and limitations
 
-- Metadata-only inspection confirmed the actual common layout is customer/year/dated-topic/documents, with some exceptions. Current grouping still uses the first two directory levels; correcting the year/session boundary remains separate work.
+- Legacy loose files remain individual candidates; multiple deliveries contained within one file still produce at most one result for that file. Newer consistently organized dated-topic folders provide clearer session boundaries.
 
 - Matching date evidence does not authenticate a delivery. Customer and subject are not independently verified against excerpts; convincing planted notes with forged past dates can still mislead the model and ranking.
 - The coverage cap is a lexical consistency check, not a prompt-injection security barrier. Planted text can include all query terms. Ratings 2 and 3 remain on-topic, so the cap affects relevance tie-breaking, not recency-first ordering or eligibility. Evidenced future deliveries remain excluded.
@@ -82,4 +84,4 @@ Update this document when implementation progress, readiness, completed verifica
 
 ## Retrieval layout and scope decisions
 
-The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files are included, with hidden files and binary content still excluded. The fixed customer root anchors grouping; configurable and narrowed search roots have been removed. The ignore decision is implemented with `--no-ignore` and no `--hidden`; there are no outstanding layout or ignore-policy questions from this review.
+Metadata inspection confirmed customer/year/dated-topic/document folders, potentially with multiple documents per session; the user also confirmed legacy notes directly under years. This layout is now supported without merging whole years. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files are included, with hidden files and binary content still excluded. The fixed customer root anchors grouping; configurable and narrowed search roots have been removed. The ignore decision is implemented with `--no-ignore` and no `--hidden`; there are no outstanding layout or ignore-policy questions from this review.
