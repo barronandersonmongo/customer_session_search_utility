@@ -32,12 +32,6 @@ Open result [1], or q to quit:
 
 Repository: [customer_session_search_utility](https://github.com/barronandersonmongo/customer_session_search_utility)
 
-### Status
-
-The project is in initial setup. Configuration templates and documentation exist; the C++ command-line program has not yet been implemented. The example above describes planned behavior.
-
-The development system has GCC 15.2.0, and compilation and execution of a C++17 standard-library program have been verified. A minimal request using the local configuration also successfully authenticated with Grove and received a response from GPT-6 Astra.
-
 ### Planned architecture
 
 1. A C++ command-line application accepts a topic and loads configuration.
@@ -62,23 +56,21 @@ Copy `.env.example` to `.env` if a local configuration does not already exist, t
 | Variable | Purpose |
 | --- | --- |
 | `LLM_API_KEY` | Company-provided Grove API key. |
-| `LLM_BASE_URL` | Grove endpoint. The verified configuration uses a complete HTTPS URL ending in `/chat/completions`. |
+| `LLM_BASE_URL` | Complete Grove HTTPS endpoint ending in `/chat/completions`. |
 | `LLM_MODEL` | Model identifier; currently `gpt-6-astra`. |
 | `SEARCH_ROOT` | Notes directory; defaults in the template to `/home/barry/GoogleDrive/Builder Relations/Customers/`. |
 
-The verified Grove endpoint accepts OpenAI-style Chat Completions requests with the credential in the `api-key` header. The configured full endpoint must be used directly without appending `/chat/completions` again. The successful test supplied `model`, `messages`, and `max_completion_tokens` and read text from `choices[0].message.content`.
+The Grove integration uses OpenAI-style Chat Completions requests with the credential in the `api-key` header. Use the configured full endpoint directly without appending `/chat/completions` again. Requests supply `model`, `messages`, and `max_completion_tokens`; response text is read from `choices[0].message.content`.
 
-`.env` is ignored by Git. Keep real credentials and private endpoint details out of documentation, test fixtures, logs, and commits. The local `.env` is already populated; the template contains no credentials.
+`.env` is ignored by Git. Keep real credentials and private endpoint details out of documentation, test fixtures, logs, and commits. The template contains no credentials.
 
 ### Build and run
 
-There is currently no application executable or build system, so build and run commands are not yet available. This section will include verified commands when the initial implementation is added.
-
-Planned runtime dependencies include ripgrep, network access to Grove, and Dolphin for the optional folder-opening action. Additional build dependencies and exact commands will be documented as implementation proceeds.
+Planned runtime dependencies include ripgrep, network access to Grove, and Dolphin for the optional folder-opening action. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for build and run readiness.
 
 ### Development and documentation maintenance
 
-Keep this file and `AGENTS.md` synchronized with the program as it changes. Document implemented behavior, configuration, dependencies, and verified build and usage commands in the same change that introduces them, and distinguish planned features from working functionality.
+Keep this file, `AGENTS.md`, and `PROJECT_STATUS.md` synchronized with the program as it changes. Keep progress, readiness, verification results, and outstanding work in `PROJECT_STATUS.md`. Document behavior, configuration, dependencies, and verified build and usage commands here in the same change that introduces them.
 
 Keep the opening sections focused on functional needs and user benefits. Place architecture, technical decisions, configuration, and build and run instructions in the lower technical portion.
 
