@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 86 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 88 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Safe curl diagnostics: final configure/build and both CTest suites passed (87 integration passes, one root-only skip, plus native process checks). Synthetic exit-code tests cover 5/6/7/28/35/51/52/56/58/59/60/77/99, asserting specific messages and no secret/URL/request leakage from child stderr. A response over 1 MiB gets its own error before the killed child status. Exit-code meanings were checked against the installed curl manual. No live API request or real `.env`/customer-note content access.
 
 - Terminal prompt guard: build and both suites passed (85 integration passes, one root-only skip, plus native checks). A pty stdin with piped stdout exits without input or a prompt and never invokes Dolphin; fully interactive selection tests still pass. The prompt now requires both standard input and output to be terminals.
 

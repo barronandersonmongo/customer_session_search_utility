@@ -207,6 +207,23 @@ std::string config_quote(const std::string& s) {
 }
 constexpr int kSearchCompletionTokens = 16384;
 constexpr int kConnectionCompletionTokens = 2048;
+std::string curl_transport_error(int code) {
+    const char* reason;
+    switch (code) {
+        case 5: reason = "could not resolve proxy"; break;
+        case 6: reason = "could not resolve API host"; break;
+        case 7: reason = "could not connect to API server"; break;
+        case 35: reason = "TLS handshake failed"; break;
+        case 51: case 60: reason = "certificate verification failed"; break;
+        case 58: reason = "local certificate problem"; break;
+        case 59: reason = "TLS cipher configuration problem"; break;
+        case 77: reason = "certificate authority configuration problem"; break;
+        case 52: reason = "empty server response"; break;
+        case 56: reason = "failed to receive server response"; break;
+        default: reason = "transport error"; break;
+    }
+    return "Grove request failed: "s + reason + " (code " + std::to_string(code) + ").";
+}
 std::string api(const std::map<std::string, std::string>& cfg, const json::array& messages, int tokens, bool structured) {
     auto get = [&](const std::string& k) {
         auto it = cfg.find(k);
@@ -222,9 +239,10 @@ std::string api(const std::map<std::string, std::string>& cfg, const json::array
         + "\nheader = \"Content-Type: application/json\"\ndata-binary = " + config_quote(json::serialize(request)) + "\n";
     auto response = process({"curl", "--disable", "--config", "-", "--silent", "--show-error", "--proto", "=https",
                              "--connect-timeout", "10", "--max-time", "55", "--write-out", "\n%{http_code}"}, input, 1024 * 1024, 60);
+    if (response.limited) throw std::runtime_error("Grove response exceeded the 1 MiB limit; no partial response was accepted.");
     if (response.code == 127) throw std::runtime_error("curl is required but was not found in PATH.");
     if (response.timed_out || response.code == 28) throw std::runtime_error("Grove request timed out; no partial response was accepted.");
-    if (response.code != 0 || response.limited) throw std::runtime_error("Grove request failed (transport error); check connectivity and endpoint.");
+    if (response.code != 0) throw std::runtime_error(curl_transport_error(response.code));
     auto pos = response.output.rfind('\n');
     if (pos == std::string::npos) throw std::runtime_error("Missing Grove HTTP status.");
     auto status = response.output.substr(pos + 1);

@@ -34,6 +34,12 @@ request = json.loads(config['data-binary'][0])
 assert request['model'] == 'gpt-6-astra'
 mode = os.environ.get('TEST_MODE', '')
 Path(os.environ['MOCK_CALLED']).write_text('called')
+if 'TEST_CURL_EXIT' in os.environ:
+    print('synthetic-secret https://private.invalid request-text-private', file=sys.stderr)
+    sys.exit(int(os.environ['TEST_CURL_EXIT']))
+if mode == 'oversized-response':
+    print('sensitive-response' * 80000, end='', flush=True)
+    sys.exit(0)
 if mode == 'curl-timeout': sys.exit(28)
 if mode == 'http':
     print('{"error":"synthetic-secret"}\n401', end=''); sys.exit(0)
@@ -513,6 +519,27 @@ class Integration(unittest.TestCase):
         result = self.run_app('Vector Search', mode='curl-timeout', success=False)
         self.assertIn('Grove request timed out', result.stderr)
         self.assertNotIn('1. ', result.stdout)
+
+    def test_curl_exit_codes_have_safe_specific_errors(self):
+        messages = {5: 'could not resolve proxy', 6: 'could not resolve API host',
+                    7: 'could not connect', 28: 'timed out', 35: 'TLS handshake failed',
+                    51: 'certificate verification', 58: 'local certificate', 59: 'TLS cipher',
+                    60: 'certificate verification', 77: 'certificate authority',
+                    52: 'empty server response', 56: 'failed to receive', 99: 'transport error'}
+        for code, message in messages.items():
+            with self.subTest(code=code):
+                self.env['TEST_CURL_EXIT'] = str(code)
+                result = self.run_app('--check-connection', success=False)
+                self.assertIn(message, result.stderr)
+                if code != 28: self.assertIn('code ' + str(code), result.stderr)
+                self.assertNotIn('https://', result.stdout + result.stderr)
+                self.assertNotIn('request-text-private', result.stdout + result.stderr)
+
+    def test_oversized_response_has_own_error(self):
+        result = self.run_app('--check-connection', mode='oversized-response', success=False)
+        self.assertIn('exceeded the 1 MiB limit', result.stderr)
+        self.assertNotIn('transport error', result.stderr)
+        self.assertNotIn('sensitive-response', result.stdout + result.stderr)
 
     def test_invalid_and_incomplete_completions_have_distinct_errors(self):
         for mode in ('missing-envelope', 'null-content'):
