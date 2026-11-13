@@ -64,17 +64,17 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 
 ### Limits of verification
 
-Year-only references are conservative sorting placeholders, not confirmed January 1 deliveries. Local-only mode can show a reference from the folder year without an LLM call; customer, actual delivery day, and relevance remain unverified.
+Year-only references are conservative sorting placeholders, not confirmed January 1 deliveries. Local-only mode can show a reference from the folder year without an LLM call; the customer is derived from the first folder below Customers, while the actual delivery day and relevance remain unverified.
 
 Folder containment is checked before launching Dolphin, but a concurrent folder/symlink swap between validation and launch remains possible. The launcher is not an atomic filesystem sandbox.
 
 Terminal output escapes C1 controls, bidi formatting controls, Unicode line/paragraph separators, and invalid UTF-8 bytes. Ordinary international text is preserved. Escaping affects display only; folder opening uses the actual validated path. The application does not keep a usage audit or persistent usage log.
 
-Missing, null, or non-string customer/subject/date fields are treated as unknown, and unusable date evidence becomes empty. A customer over 200 bytes or subject over 300 bytes skips only that item with one stderr count; if every item is oversized, the response fails. Non-object items, invalid IDs or relevance, and duplicate IDs still reject the whole response. A response containing only evidenced future deliveries is a successful empty result.
+Customer names always come from the first folder below the fixed Customers root, including local-only results; for example, `Customers/Warner Bros./2026/...` gives `Warner Bros.`. Any model-supplied customer value is ignored. Files directly in the Customers root have an unknown customer. Missing, null, or non-string subject/date fields are treated as unknown, and unusable date evidence becomes empty. A subject over 300 bytes skips only that item with one stderr count; if every item is oversized, the response fails. Non-object items, invalid IDs or relevance, and duplicate IDs still reject the whole response. A response containing only evidenced future deliveries is a successful empty result.
 
 After an LLM search returns results, a short stderr notice reminds you to check the customer, delivery date, and subject in the folder before relying on them. It does not appear for local-only searches, empty results, or connection checks, and the stdout result list is unchanged.
 
-Local checks validate candidate IDs, relevance ranges, calendar dates, and matching date evidence; they do not authenticate what the notes claim. Customer and subject are not independently verified against excerpts. A convincing planted note with a forged past delivery date can still mislead the model and rank highly. Matching evidence proves that the source contains a date, not that a delivery happened.
+Local checks validate candidate IDs, relevance ranges, calendar dates, and matching date evidence; they do not authenticate what the notes claim. Customer is determined by folder placement, not by the model; subject is not independently verified against excerpts. A convincing planted note with a forged past delivery date can still mislead the model and rank highly. Matching evidence proves that the source contains a date, not that a delivery happened.
 
 A direct relevance rating of 3 requires at least 50% of the distinct non-stopword query terms (or all terms for an all-stopword query), rounded up, in the note text actually retained in the submitted excerpt. Otherwise it is capped at 2; ratings 1 and 2 are unchanged, and the check never drops a result. Coverage uses case-insensitive literal matching and excludes folder paths, filename prefixes, and lines omitted by the excerpt budget. A single-term query passes when that term is present in the submitted note text. The percentage is centralized in `kMinimumDirectCoveragePercent`.
 

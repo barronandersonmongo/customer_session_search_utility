@@ -28,9 +28,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 102 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 104 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Path-derived customer names: build and all three suites passed (103 integration passes, one root-only ownership skip, plus native suites). Both local-only and verified results use the first directory below the fixed Customers root. Tests cover nested Warner Bros. sessions, spoofed/oversized model customer values being ignored, international/control-character display, and root-level files remaining Unknown. Model extraction no longer requests customer; oversized subject protection remains. Existing fixture expectations were updated only for the intentionally authoritative customer field. No real `.env`, real note contents, or live API access; private usage notes updated locally.
 
 - Year-only references: build and all three suites passed (101 integration passes, one root-only ownership skip, plus native suites). Tests verify January 1 fallback from customer/year folders or quoted year-only model values, rejection of an ungrounded numeric prefix, conservative reference-date sorting, full-date precedence, future-year exclusion, and local-only references without credentials. References display `(year reference)` and are counted in verbose validation. No real `.env` or customer-note contents accessed; private usage notes updated locally and remain ignored.
 
@@ -91,7 +93,7 @@ The executable is `build/bfind`. Verified build and offline-test commands are in
 
 - Legacy loose files remain individual candidates; multiple deliveries contained within one file still produce at most one result for that file. Newer consistently organized dated-topic folders provide clearer session boundaries.
 
-- Matching date evidence does not authenticate a delivery. Customer and subject are not independently verified against excerpts; convincing planted notes with forged past dates can still mislead the model and ranking.
+- Matching date evidence does not authenticate a delivery. Customer is derived from folder placement; subject is not independently verified against excerpts; convincing planted notes with forged past dates can still mislead the model and ranking.
 - The coverage cap is a lexical consistency check, not a prompt-injection security barrier. Planted text can include all query terms. Ratings 2 and 3 remain on-topic, so the cap affects relevance tie-breaking, not recency-first ordering or eligibility. Evidenced future deliveries remain excluded.
 - Actual customer-note searches have not been used for acceptance testing. Evaluate extraction quality against known sessions during normal use and adjust retrieval context if needed.
 - The ownership-warning branch has a root-only synthetic test; it was not exercised in this non-root test run. Group/other permission warnings were exercised for both default and explicit config files.

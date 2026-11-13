@@ -85,7 +85,7 @@ else:
             if mode == 'missing-fields': results[0].pop(field)
             else: results[0][field] = None if mode == 'null-fields' else ['not a string']
     if mode == 'nonobject': results.append(None)
-    if mode == 'oversized': results[0]['customer'] = 'x' * 201
+    if mode == 'oversized': results[0]['subject'] = 'x' * 301
     if mode == 'all-oversized':
         for result in results: result['subject'] = 'x' * 301
     if mode == 'duplicate': results.append(results[0])
@@ -367,7 +367,8 @@ class Integration(unittest.TestCase):
     def test_model_fields_escape_unicode_terminal_controls(self):
         self.env['TEST_RESULTS'] = json.dumps({'Recent': dict(customer='Café\u202e\u0085', subject='東京\u2066topic\u2069')})
         result = self.run_app('Vector Search')
-        self.assertIn('Café\\u202E\\u0085', result.stdout)
+        self.assertNotIn('Café', result.stdout)  # A model cannot replace the path-derived customer.
+        self.assertIn('Recent |', result.stdout)
         self.assertIn('東京\\u2066topic\\u2069', result.stdout)
         self.assertNotIn('\u202e', result.stdout)
 
@@ -376,6 +377,7 @@ class Integration(unittest.TestCase):
         folder = self.note(name, 'Vector Search\n')
         result = self.run_app('--local-only', 'Vector Search')
         self.assertIn('Café\\u202E\\u009B', result.stdout)
+        self.assertIn('. Café\\u202E\\u009B |', result.stdout)
         self.assertNotIn('\u202e', result.stdout)
         self.assertTrue(folder.is_dir())
 
@@ -406,14 +408,15 @@ class Integration(unittest.TestCase):
         for mode in ('null-fields', 'missing-fields', 'wrong-fields'):
             with self.subTest(mode=mode):
                 result = self.run_app('Vector Search', mode=mode)
-                self.assertIn('Unknown | Unknown | Unknown', result.stdout)
+                self.assertIn('| Unknown | Unknown', result.stdout)
+                self.assertNotIn('. Unknown |', result.stdout)
                 self.assertEqual(result.stdout.count('\n   '), 3)
 
     def test_oversized_fields_skip_only_the_item(self):
         result = self.run_app('Vector Search', mode='oversized')
         self.assertIn('Skipped 1 model result(s)', result.stderr)
         self.assertEqual(result.stdout.count('\n   '), 2)
-        self.assertNotIn('x' * 201, result.stdout + result.stderr)
+        self.assertNotIn('x' * 301, result.stdout + result.stderr)
         result = self.run_app('Vector Search', mode='all-oversized', success=False)
         self.assertIn('Skipped 3 model result(s)', result.stderr)
         self.assertIn('invalid session data', result.stderr)
@@ -486,6 +489,25 @@ class Integration(unittest.TestCase):
         self.assertEqual(result.stdout.count('\n   '), 1)
         self.assertIn(str(session), result.stdout)
 
+    def test_customer_is_first_folder_in_local_and_verified_results(self):
+        self.ranking_fixture([])
+        customer = 'Warner Bros.'
+        session = self.root / customer / '2025' / '2025-09-14 - Vector Search'
+        (session / 'notes').mkdir(parents=True)
+        (session / 'notes' / 'notes.txt').write_text('Vector Search\nDelivered: 2025-09-14\n')
+        self.env['TEST_RESULTS'] = json.dumps({session.name: dict(customer='Wrong model customer' * 100)})
+        for args in ((), ('--local-only',)):
+            with self.subTest(args=args):
+                result = self.run_app(*args, 'Vector Search')
+                self.assertIn('1. Warner Bros. |', result.stdout)
+                self.assertNotIn('Wrong model customer', result.stdout)
+
+    def test_file_directly_under_customers_root_has_unknown_customer(self):
+        self.ranking_fixture([])
+        (self.root / 'notes.txt').write_text('Vector Search\n')
+        result = self.run_app('--local-only', 'Vector Search')
+        self.assertIn('1. Unknown |', result.stdout)
+
     def test_separate_session_dates_stay_separate(self):
         first = self.session_tree()
         second = first.parent / '2025-09-15'
@@ -543,7 +565,7 @@ class Integration(unittest.TestCase):
         self.env['TEST_RESULTS'] = json.dumps({'2025': dict(date='Unknown', date_evidence=''),
                                                'Old': dict(date='2024-12-31', date_evidence='2024-12-31'),
                                                'Dated': dict(date='2025-02-01', date_evidence='2025-02-01')})
-        self.assertEqual(self.ranked_customers(), ['Dated', '2025', 'Old'])
+        self.assertEqual(self.ranked_customers(), ['Dated', 'Acme', 'Old'])
 
     def test_valid_delivery_date_takes_precedence_over_folder_year(self):
         self.ranking_fixture([])
