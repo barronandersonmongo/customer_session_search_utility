@@ -13,4 +13,5 @@ inline constexpr const char* kPresentationTitles = R"(1. Data Modeling and Schem
 10. Search Fundamentals
 11. MongoDB Security Basics
 12. Vector Search Performance
+13. Voyage AI with MongoDB
 )";

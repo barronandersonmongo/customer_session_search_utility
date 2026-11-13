@@ -6,7 +6,7 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
-- Added the team’s 12 curated presentation titles in `src/presentation_titles.hpp` to LLM relevance and subject instructions. Evidence-supported abbreviations/paraphrases should resolve to exact titles; ambiguous matches retain evidence-based subjects. Extending the catalog requires editing that header and rebuilding. Local retrieval and ranking are unchanged; subject normalization remains model judgment.
+- Added the team’s 13 curated presentation titles in `src/presentation_titles.hpp` to LLM relevance and subject instructions. Evidence-supported abbreviations/paraphrases should resolve to exact titles; ambiguous matches retain evidence-based subjects. Extending the catalog requires editing that header and rebuilding. Local retrieval and ranking are unchanged; subject normalization remains model judgment.
 
 - Replaced the year-reference suffix with `*` and added a fixed six-calendar-month eligibility window, pruning locally resolved old/future candidates before scoring and LLM calls and enforcing the same window after verification.
 
@@ -35,6 +35,8 @@ The initial C++ command-line application is implemented and builds successfully.
 - Added 119 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Extended the catalog with `Voyage AI with MongoDB` (13 titles total). Release configure/build and the targeted mocked-search integration check passed, including assertions that all 13 exact titles reach the LLM instructions and normal result output is preserved. No live API, real notes, or `.env` access.
 
 - Curated presentation catalog: Release configure/build and all four offline CTest suites passed. Mock search requests assert all 12 exact titles and the canonical-subject, ambiguity, and evidence instructions are present. No live LLM classification was tested, no live API request was made, and no real notes or `.env` were accessed.
 

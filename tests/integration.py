@@ -74,6 +74,7 @@ else:
         'Search Fundamentals',
         'MongoDB Security Basics',
         'Vector Search Performance',
+        'Voyage AI with MongoDB',
     ]
     for index, title in enumerate(titles, 1):
         assert f'{index}. {title}\n' in instructions
