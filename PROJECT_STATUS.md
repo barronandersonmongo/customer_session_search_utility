@@ -6,6 +6,8 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
+- LLM verification now requests a semantic presentation-title match for specific presentation queries. Matching on-topic sessions rank before other on-topic sessions, newest first within each subgroup; peripheral results stay last. Broad/ambiguous queries use false, and missing or malformed optional flags default false. Local-only ranking is unchanged. This supersedes unconditional recency-first ordering among all on-topic results; the title-match judgment is not independently verified.
+
 - Added the team’s 13 curated presentation titles in `src/presentation_titles.hpp` to LLM relevance and subject instructions. Evidence-supported abbreviations/paraphrases should resolve to exact titles; ambiguous matches retain evidence-based subjects. Extending the catalog requires editing that header and rebuilding. Local retrieval and ranking are unchanged; subject normalization remains model judgment.
 
 - Replaced the year-reference suffix with `*` and added a fixed six-calendar-month eligibility window, pruning locally resolved old/future candidates before scoring and LLM calls and enforcing the same window after verification.
@@ -35,6 +37,8 @@ The initial C++ command-line application is implemented and builds successfully.
 - Added 119 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Presentation-match priority: Release configure/build succeeded. The offline run passed the new match-priority/recency/unknown-date and malformed-flag/peripheral-guard cases, existing ranking/date/local-only checks, and all three native suites (121 integration cases run, one ownership skip). One stale verbose ordering-string assertion failed in that run; after updating it to the new order, its targeted rerun passed. Mock requests assert the new semantic-match instructions. No live model classification, real customer notes, `.env` access, or live API calls were used.
 
 - Extended the catalog with `Voyage AI with MongoDB` (13 titles total). Release configure/build and the targeted mocked-search integration check passed, including assertions that all 13 exact titles reach the LLM instructions and normal result output is preserved. No live API, real notes, or `.env` access.
 

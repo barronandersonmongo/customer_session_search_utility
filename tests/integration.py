@@ -80,6 +80,8 @@ else:
         assert f'{index}. {title}\n' in instructions
     assert 'return its exact curated title as subject' in instructions
     assert 'Do not force an ambiguous match' in instructions
+    assert 'Return title_match as a boolean' in instructions
+    assert 'Use false for broad topic queries' in instructions
     assert 'catalog is reference\nvocabulary, not evidence' in instructions
     context = json.loads(request['messages'][1]['content'])
     assert context['as_of_date'] == datetime.datetime.fromtimestamp(TEST_EPOCH).date().isoformat()
@@ -210,6 +212,34 @@ class Integration(unittest.TestCase):
     def ranked_customers(self, query='Vector Search', **kwargs):
         result = self.run_app(query, **kwargs)
         return [line.split('. ', 1)[1].split(' | ', 1)[0] for line in result.stdout.splitlines() if ' | ' in line]
+
+    def test_title_match_precedes_newer_related_sessions(self):
+        self.ranking_fixture([('Humana', '2025-01-14', 3, 1),
+                              ('Liberty', '2025-03-01', 2, 1),
+                              ('NewerMatch', '2025-02-01', 3, 1),
+                              ('UndatedMatch', 'Unknown', 3, 1)])
+        overrides = json.loads(self.env['TEST_RESULTS'])
+        for name in ('Humana', 'NewerMatch', 'UndatedMatch'):
+            overrides[name].update(title_match=True, subject='Vector Search: Beginner to Pro')
+        overrides['Liberty'].update(title_match=False, subject='Voyage AI with MongoDB')
+        self.env['TEST_RESULTS'] = json.dumps(overrides)
+        self.assertEqual(self.ranked_customers('Vector Search Beginner to Pro', mode='reverse'),
+                         ['NewerMatch', 'Humana', 'UndatedMatch', 'Liberty'])
+        result = self.run_app('--verbose', 'Vector Search Beginner to Pro')
+        self.assertIn('LLM presentation title match=yes', result.stderr)
+        self.assertIn('LLM presentation title match=no', result.stderr)
+
+    def test_title_match_defaults_and_peripheral_guard(self):
+        self.ranking_fixture([('Old', '2025-01-14', 3, 1),
+                              ('Recent', '2025-03-01', 2, 1),
+                              ('Peripheral', '2025-03-02', 1, 1)])
+        overrides = json.loads(self.env['TEST_RESULTS'])
+        overrides['Peripheral']['title_match'] = True
+        for value in (None, 'true', 1, [], {}):
+            with self.subTest(value=value):
+                overrides['Old']['title_match'] = value
+                self.env['TEST_RESULTS'] = json.dumps(overrides)
+                self.assertEqual(self.ranked_customers(), ['Recent', 'Old', 'Peripheral'])
 
     def coverage_fixture(self, claimed_text, reference_text, claimed_name='Claimed', filename='notes.txt', reference_rating=2):
         self.ranking_fixture([])
@@ -426,7 +456,7 @@ class Integration(unittest.TestCase):
         self.assertRegex(result.stderr, r'Result a \(candidate [0-9]+\): source=folder:.*Recent')
         self.assertIn('LLM relevance=3 -> effective relevance=3; group=on-topic', result.stderr)
         self.assertIn('LLM relevance=2 -> effective relevance=2; group=on-topic', result.stderr)
-        self.assertIn('Ordering: group, newest date', result.stderr)
+        self.assertIn('Ordering: group, presentation title match, newest date', result.stderr)
 
     def test_verbose_explains_coverage_cap(self):
         self.coverage_fixture('alpha\n', 'alpha beta gamma\n')
