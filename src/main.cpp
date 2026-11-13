@@ -234,6 +234,19 @@ bool inside(const fs::path& path, const fs::path& root) {
     auto relative = path.lexically_relative(root);
     return !relative.empty() && *relative.begin() != "..";
 }
+fs::path session_folder(const fs::path& file, const fs::path& root, const fs::path& anchor) {
+    auto relative = file.parent_path().lexically_relative(anchor);
+    auto part = relative.begin();
+    fs::path session = anchor;
+    for (int level = 0; level < 2; ++level) {
+        if (part == relative.end() || *part == ".." || *part == ".") return file.parent_path();
+        session /= *part++;
+    }
+    if (inside(session, root)) return session;
+    // A narrowed root inside a session must not open a folder outside the requested root.
+    if (inside(root, session)) return root;
+    return file.parent_path();
+}
 std::vector<std::string> terms(const std::string& query) {
     std::istringstream stream(query); std::set<std::string> seen; std::vector<std::string> result;
     std::string term;
@@ -250,7 +263,7 @@ std::vector<std::string> terms(const std::string& query) {
     return filtered.empty() ? result : filtered;
 }
 struct Retrieval { std::vector<Candidate> candidates; bool partial; };
-Retrieval retrieve(const Options& opt, const fs::path& root) {
+Retrieval retrieve(const Options& opt, const fs::path& root, const fs::path& grouping_anchor) {
     auto words = terms(opt.query);
     std::vector<std::string> args{"rg", "--no-config", "--json", "--sort", "path", "--ignore-case", "--fixed-strings", "--context", std::to_string(opt.context),
         "--max-count", "12", "--max-filesize", "2M", "--color", "never"};
@@ -286,11 +299,12 @@ Retrieval retrieve(const Options& opt, const fs::path& root) {
         if (!entry.first->second) continue;
         const auto& path = *entry.first->second;
         if (!inside(path, root)) continue;
-        auto folder = path.parent_path();
+        auto folder = session_folder(path, root, grouping_anchor);
+        auto file_key = path.lexically_relative(folder).generic_string();
         auto& candidate = grouped[folder.string()]; candidate.folder = folder;
         // Bound per-folder intermediate content even for folders with many matching files.
-        if (candidate.lines.size() < 12 || candidate.lines.count(path.filename().string())) {
-            auto& lines = candidate.lines[path.filename().string()];
+        if (candidate.lines.size() < 12 || candidate.lines.count(file_key)) {
+            auto& lines = candidate.lines[file_key];
             if (lines.size() < 100) {
                 std::string snippet(text->as_string());
                 if (snippet.size() > 1200) {
@@ -497,7 +511,13 @@ int main(int argc, char** argv) {
         if (opt.root.empty()) opt.root = cfg.count("SEARCH_ROOT") ? cfg.at("SEARCH_ROOT") : "/home/barry/GoogleDrive/Builder Relations/Customers/";
         if (!fs::is_directory(opt.root)) throw std::runtime_error("Search root is not an accessible directory.");
         auto root = fs::canonical(opt.root);
-        auto retrieved = retrieve(opt, root);
+        fs::path grouping_anchor = root;
+        if (cfg.count("SEARCH_ROOT") && !cfg.at("SEARCH_ROOT").empty()) {
+            std::error_code ec;
+            auto configured_root = fs::weakly_canonical(cfg.at("SEARCH_ROOT"), ec);
+            if (!ec && inside(root, configured_root)) grouping_anchor = std::move(configured_root);
+        }
+        auto retrieved = retrieve(opt, root, grouping_anchor);
         auto& candidates = retrieved.candidates;
         if (candidates.empty()) {
             std::cout << (retrieved.partial ? "No local matches found in partial search results; coverage is incomplete.\n" : "No local matches found.\n");

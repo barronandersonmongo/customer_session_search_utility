@@ -24,9 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 69 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 72 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Customer/date grouping: build and both suites passed (71 integration passes, one root-only skip, plus native process checks). Synthetic tests cover multiple direct/nested documents per session, same-named documents in separate subfolders, separate date folders, and narrowed roots with containment preserved. No real notes were read.
 
 - Partial-result robustness: final rebuild and both CTest suites passed (68 integration passes, one root-only skip, plus native process checks). A synthetic mock ripgrep exercised the real 30-second timeout and retained completed records. Tests cover repeated inaccessible paths counted once, other-file survival, partial empty-result wording, and curl exit-28 timeout rejection. Native tests also assert preserved partial bytes and reaping. An intermediate stale-build error was corrected by rebuilding the final source before the successful run. No live API calls or real `.env` access.
 
@@ -73,4 +75,4 @@ Update this document when implementation progress, readiness, completed verifica
 
 ## Retrieval layout and scope decisions
 
-The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files will be included, with hidden files and binary content still excluded. Grouping and ignore behavior will be implemented in focused changes.
+The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files will be included, with hidden files and binary content still excluded. Customer/date grouping is implemented, with the configured root anchoring the layout and narrowed roots retaining containment. Ignore behavior will be implemented in its own focused change.

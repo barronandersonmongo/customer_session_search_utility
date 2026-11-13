@@ -45,6 +45,9 @@ else:
     if 'EXPECTED_EXACT_CANDIDATES' in os.environ:
         assert len(candidates) == int(os.environ['EXPECTED_EXACT_CANDIDATES'])
     assert all(len(c['excerpts'].encode()) <= 3000 for c in candidates)
+    for c in candidates:
+        for text in json.loads(os.environ.get('EXPECTED_EXCERPT_TEXT', '{}')).get(Path(c['folder']).name, []):
+            assert text in c['excerpts']
     results = []
     for c in candidates:
         folder = c['folder']
@@ -366,6 +369,44 @@ class Integration(unittest.TestCase):
     def test_filtered_terms_are_used_by_coverage_cap(self):
         self.coverage_fixture('alpha\n', 'alpha exercise one\nalpha exercise two\n')
         self.assertEqual(self.ranked_customers('the and alpha'), ['Claimed', 'Reference'])
+
+    def session_tree(self):
+        self.ranking_fixture([])
+        session = self.root / 'Acme' / '2025-09-14'
+        for subdir, marker in (('notes', 'Notebook material'), ('slides', 'Slide text material')):
+            folder = session / subdir
+            folder.mkdir(parents=True)
+            (folder / 'notes.txt').write_text('Vector Search\nDelivered: 2025-09-14\n' + marker + '\n')
+        (session / 'overview.md').write_text('Vector Search overview\nDelivered: 2025-09-14\n')
+        return session
+
+    def test_customer_date_documents_group_into_one_session(self):
+        session = self.session_tree()
+        self.env['EXPECTED_EXACT_CANDIDATES'] = '1'
+        self.env['EXPECTED_EXCERPT_TEXT'] = json.dumps({session.name: ['Notebook material', 'Slide text material',
+                                                                    'notes/notes.txt', 'slides/notes.txt']})
+        result = self.run_app('Vector Search')
+        self.assertEqual(result.stdout.count('\n   '), 1)
+        self.assertIn(str(session), result.stdout)
+
+    def test_separate_session_dates_stay_separate(self):
+        first = self.session_tree()
+        second = first.parent / '2025-09-15'
+        second.mkdir()
+        (second / 'notes.txt').write_text('Vector Search\nDelivered: 2025-09-15\n')
+        self.env['EXPECTED_EXACT_CANDIDATES'] = '2'
+        result = self.run_app('Vector Search')
+        self.assertEqual(result.stdout.count('\n   '), 2)
+        self.assertIn(str(first), result.stdout)
+        self.assertIn(str(second), result.stdout)
+
+    def test_narrow_root_preserves_session_boundary_and_containment(self):
+        session = self.session_tree()
+        for root, expected in ((session.parent, session), (session, session), (session / 'notes', session / 'notes')):
+            with self.subTest(root=root):
+                result = self.run_app('--local-only', '--root', str(root), 'Vector Search')
+                self.assertEqual(result.stdout.count('\n   '), 1)
+                self.assertIn('\n   ' + str(expected) + '\n', result.stdout)
 
     def test_http_error_hides_response_and_credentials(self):
         result = self.run_app('Vector Search', mode='http', success=False)
