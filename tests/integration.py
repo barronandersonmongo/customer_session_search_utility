@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import pty
 import select
+import shlex
 import shutil
 import subprocess
 import sys
@@ -747,6 +748,30 @@ class Integration(unittest.TestCase):
 
     def test_dolphin_quit(self):
         self.interact(b'q\n')
+
+    def signal_probe(self, program):
+        executable = self.bin / program
+        body = self.bin / (program + '-body.py')
+        executable.rename(body)
+        mask = self.base / (program + '-signals')
+        self.env['SIGNAL_MASK_FILE'] = str(mask)
+        executable.write_text('#!/bin/sh\nwhile read -r name value rest; do\n'
+                              '  if [ "$name" = "SigIgn:" ]; then\n'
+                              '    printf "%s\\n" "$value" > "$SIGNAL_MASK_FILE"\n'
+                              '    break\n  fi\ndone < "/proc/$$/status"\n' +
+                              'exec ' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(body)) + ' "$@"\n')
+        executable.chmod(0o755)
+        return mask
+
+    def test_curl_starts_with_default_sigpipe(self):
+        mask = self.signal_probe('curl')
+        self.run_app('--check-connection')
+        self.assertEqual(int(mask.read_text().strip(), 16) & 0x1000, 0)
+
+    def test_dolphin_starts_with_default_sigpipe(self):
+        mask = self.signal_probe('dolphin')
+        self.interact(b'\n')
+        self.assertEqual(int(mask.read_text().strip(), 16) & 0x1000, 0)
 
 
 if __name__ == '__main__':

@@ -21,6 +21,7 @@ ProcessResult process(const std::vector<std::string>& args, const std::string& i
         throw std::runtime_error("Cannot start child process.");
     }
     if (pid == 0) {
+        std::signal(SIGPIPE, SIG_DFL);
         dup2(in[0], STDIN_FILENO); dup2(out[1], STDOUT_FILENO);
         int nullfd = open("/dev/null", O_WRONLY);
         if (nullfd >= 0) { dup2(nullfd, STDERR_FILENO); close(nullfd); }

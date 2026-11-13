@@ -13,6 +13,10 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "sigpipe-default") {
+        struct sigaction disposition{};
+        return sigaction(SIGPIPE, nullptr, &disposition) == 0 && disposition.sa_handler == SIG_DFL ? 0 : 1;
+    }
     std::signal(SIGPIPE, SIG_IGN);
     if (argc == 2) {
         const std::string mode = argv[1];
@@ -23,6 +27,10 @@ int main(int argc, char** argv) {
     }
     try {
         const auto self = std::filesystem::canonical(argv[0]).string();
+        require(process({self, "sigpipe-default"}, "", 1024, 1).code == 0, "Child inherited ignored SIGPIPE.");
+        struct sigaction disposition{};
+        require(sigaction(SIGPIPE, nullptr, &disposition) == 0 && disposition.sa_handler == SIG_IGN,
+                "Parent SIGPIPE disposition changed.");
         for (const auto& mode : {"close-stdout", "hold-stdout"}) {
             auto start = std::chrono::steady_clock::now();
             auto result = process({self, mode}, "", 1024, 1);

@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 80 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 82 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- SIGPIPE inheritance: build and both suites passed (81 integration passes, one root-only skip, plus native process checks). Shell probes record the pre-Python SigIgn mask for mocked curl and Dolphin and confirm SIGPIPE is not ignored. Native child startup also confirms SIG_DFL while the parent remains SIG_IGN. All external programs remained mocked where appropriate; no actual Dolphin window or API request.
 
 - Year/session grouping correction: configure/build and both CTest suites passed (79 integration passes, one root-only ownership skip, plus native process checks). Tests use the actual customer/year/dated-topic layout with nested same-named documents, separate sessions within one year, independent loose year notes sharing a folder, and dated sessions without a year directory. Candidate identity is separate from the folder to open; the prompt keeps legacy note IDs distinct. Fixed-root tests continue to pass. Synthetic data only; no real note contents or `.env` accessed.
 

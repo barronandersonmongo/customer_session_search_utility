@@ -62,6 +62,7 @@ void launch_dolphin(const fs::path& folder) {
         if (detached > 0) _exit(0);
         int nullfd = open("/dev/null", O_RDWR);
         if (nullfd >= 0) { for (int fd : {0, 1, 2}) dup2(nullfd, fd); if (nullfd > 2) close(nullfd); }
+        std::signal(SIGPIPE, SIG_DFL);
         execlp("dolphin", "dolphin", "--", folder.c_str(), static_cast<char*>(nullptr));
         int error = errno; (void)!write(errors[1], &error, sizeof(error)); _exit(127);
     }
