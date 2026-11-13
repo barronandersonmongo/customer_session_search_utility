@@ -28,6 +28,8 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Verification completed
 
+- Child-process deadline fix: configure/build and both CTest suites passed. The 64-case integration suite had 63 passes and one root-only skip; native tests exercised early stdout closure, a child holding stdout open, bounded deadlines, child reaping, bidirectional large-pipe exchange, and output caps. Process code now lives in `src/process.cpp` for direct tests without public timeout switches. This prerequisite was completed before partial-result handling.
+
 - Deterministic retrieval: build/CTest passed (63 passed, one root-only test skipped). Repeated local searches over a synthetic tree exceeding 16 MiB produced identical result lists and output-cap warnings with `rg --sort path`. Timeouts and concurrent tree changes are not claimed to be repeatable.
 
 - Shortlist improvements: build/CTest passed (62 passed, one root-only test skipped). Default candidates are now 40. Tests cover stopword exclusion and all-stopword fallback, rarity preference, an exact 40-candidate request, and coverage using filtered terms. The deterministic tie expectation intentionally changed to ascending paths; folder-name dates are not used to infer recency.
