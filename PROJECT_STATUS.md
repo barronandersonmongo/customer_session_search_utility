@@ -6,6 +6,8 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
+- Hardened terminal presentation, restricted curl inheritance with a TLS 1.2 minimum while preserving company proxy/CA settings, and enabled supported build hardening with an enforced minimum Boost version. No usage audit or persistent usage log was introduced.
+
 - Enforced the user's fixed search root `/home/barry/GoogleDrive/Builder Relations/Customers/`. --root is rejected, and SEARCH_ROOT is accepted only as an unused legacy setting equal to that exact literal. Other values fail before search or API requests. Launching from other working directories remains allowed.
 - Added a one-line stderr notice after nonempty LLM-generated results, preserving stdout and excluding local-only, empty-result, and connection-check modes.
 - Added a 50% distinct-term coverage requirement, rounded up, for direct relevance 3. Coverage counts only note text retained in the submitted excerpt, excluding path/filename metadata and omitted lines. Insufficient coverage caps 3 to 2 without dropping results or changing recency-first eligibility. The threshold is centralized in `kMinimumDirectCoveragePercent`.
@@ -28,6 +30,8 @@ The initial C++ command-line application is implemented and builds successfully.
 - Added 91 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Build hardening: final configure/build and all three suites passed (90 integration passes, one root-only skip, plus native Unicode/process suites). Compile commands include strong stack protection and the forced fortification pre-header on this GNU/glibc system. Macro probes verify optimized fortification >=2, preservation of the compiler default 3, upgrading an explicit 1 to 2, and unchanged O0 defaults. readelf confirms stack-canary checks in the executable. Synthetic Boost 1.74 headers are rejected during configuration; minimum supported headers are 1.75.0, not an exact dependency lock. No live API call or real `.env` access.
 
 - Curl TLS/environment hardening: build and all three suites passed (90 integration passes, one root-only skip, plus native suites). Every mocked API request asserts --tlsv1.2. Integration/native checks confirm preserved synthetic proxy/CA settings, excluded SSLKEYLOGFILE/API credentials/unrelated variables, and an unchanged parent environment. Synthetic mock controls now use temporary test-only state rather than production environment exceptions. No live API call or real `.env` access.
 
