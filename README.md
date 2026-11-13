@@ -189,7 +189,7 @@ Additional options:
 --help           Show command-line help
 ```
 
-Use `--` before a topic beginning with a hyphen. At the folder prompt, enter a listed number, press Enter for result 1, or enter `q` to quit. Invalid selections prompt again. Launch success means Dolphin was started; desktop integration is handled by Dolphin.
+Use `--` before a topic beginning with a hyphen. At the folder prompt, enter a listed number followed by Enter, press Enter for result 1, or press `q`/`Q` to quit immediately without Enter. Backspace edits numbered selections; invalid selections prompt again. Terminal settings are restored before opening a folder, on quit, and before delivering interruption/termination signals. Launch success means Dolphin was started; desktop integration is handled by Dolphin.
 
 The CLI exits with code 0 for successful searches (including no matches) and code 1 for errors. Diagnostics go to stderr; results go to stdout.
 

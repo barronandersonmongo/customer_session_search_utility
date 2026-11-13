@@ -9,11 +9,13 @@ from pathlib import Path
 import pty
 import select
 import shlex
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import termios
 import unittest
 
 BINARY = str(Path(sys.argv.pop(1)).resolve())
@@ -1004,6 +1006,9 @@ class Integration(unittest.TestCase):
     def interact(self, answer, expect_code=0, expect_open=True):
         self.write_curl_state(self.env)
         master, slave = pty.openpty()
+        original_mode = termios.tcgetattr(slave)
+        monitor = os.dup(slave)
+        self.addCleanup(os.close, monitor)
         self.addCleanup(os.close, master)
         p = subprocess.Popen([BINARY, '--env', str(self.config), 'Vector Search'],
                              env=self.env, cwd=self.base, stdin=slave, stdout=slave, stderr=slave)
@@ -1016,8 +1021,17 @@ class Integration(unittest.TestCase):
                 try: output += os.read(master, 8192)
                 except OSError: break
         self.assertIn(b'Open result [1], or q to quit:', output)
-        os.write(master, answer)
+        mode_deadline = time.monotonic() + 1
+        while termios.tcgetattr(monitor)[3] & termios.ICANON and time.monotonic() < mode_deadline:
+            time.sleep(.005)
+        self.assertFalse(termios.tcgetattr(monitor)[3] & termios.ICANON, 'Prompt did not enable immediate input.')
+        if answer is None:
+            time.sleep(.15)
+            p.send_signal(signal.SIGINT)
+        else:
+            os.write(master, answer)
         self.assertEqual(p.wait(timeout=5), expect_code)
+        self.assertEqual(termios.tcgetattr(monitor), original_mode, 'Terminal mode was not restored.')
         while select.select([master], [], [], .05)[0]:
             try: chunk = os.read(master, 8192)
             except OSError: break
@@ -1040,7 +1054,20 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.interact(b'999\n2\n'), ['--', str(self.root / 'Related')])
 
     def test_dolphin_quit(self):
-        self.interact(b'q\n')
+        self.interact(b'q', expect_open=False)
+
+    def test_uppercase_quit_needs_no_enter(self):
+        self.interact(b'Q', expect_open=False)
+
+    def test_folder_prompt_restores_terminal_after_interrupt(self):
+        self.interact(None, expect_code=-signal.SIGINT, expect_open=False)
+
+    def test_folder_selection_backspace(self):
+        self.assertEqual(self.interact(b'2\x7f1\n'), ['--', str(self.root / 'Recent')])
+
+    def test_folder_selection_accepts_multiple_digits(self):
+        self.ranking_fixture([('Case' + str(i).zfill(2), '2025-01-14', 3, 1) for i in range(1, 12)])
+        self.assertEqual(self.interact(b'10\n'), ['--', str(self.root / 'Case10')])
 
     def test_no_display_prevents_dolphin_launch(self):
         self.env.pop('DISPLAY', None)

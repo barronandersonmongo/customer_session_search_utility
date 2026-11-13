@@ -644,12 +644,11 @@ Order does not matter; the application ranks results.)";
 }
 void open_folder(const std::vector<Result>& results, const std::vector<Candidate>& candidates, const fs::path& root) {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
-    std::string answer;
     for (;;) {
         std::cout << "Open result [1], or q to quit: " << std::flush;
-        if (!std::getline(std::cin, answer)) return;
-        answer = trim(answer);
-        if (answer == "q" || answer == "Q") return;
+        auto input = read_folder_selection();
+        if (!input) return;
+        auto answer = trim(*input);
         int selected;
         try { selected = answer.empty() ? 1 : number(answer, static_cast<int>(results.size())); }
         catch (...) { std::cerr << "Enter a listed result number, or q.\n"; continue; }
