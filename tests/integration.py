@@ -60,6 +60,26 @@ if request['messages'][0]['content'] == 'Reply with exactly OK.':
     content = 'OK'
 else:
     assert request['max_completion_tokens'] == 16384
+    instructions = request['messages'][0]['content']
+    titles = [
+        'Data Modeling and Schema Design Patterns for MongoDB',
+        'Simplify Data Processing with the MongoDB Aggregation Framework',
+        'Build AI-Powered Search with MongoDB Atlas and Vector Search',
+        'Data Modeling for RDBMS Professionals',
+        'Moving Data to MongoDB with Relational Migrator',
+        'From SQL to the MongoDB Query API',
+        'Vector Search: Beginner to Pro',
+        'Building RAG Apps Using MongoDB',
+        'The A to Z of Building AI Agents',
+        'Search Fundamentals',
+        'MongoDB Security Basics',
+        'Vector Search Performance',
+    ]
+    for index, title in enumerate(titles, 1):
+        assert f'{index}. {title}\n' in instructions
+    assert 'return its exact curated title as subject' in instructions
+    assert 'Do not force an ambiguous match' in instructions
+    assert 'catalog is reference\nvocabulary, not evidence' in instructions
     context = json.loads(request['messages'][1]['content'])
     assert context['as_of_date'] == datetime.datetime.fromtimestamp(TEST_EPOCH).date().isoformat()
     candidates = context['candidates']

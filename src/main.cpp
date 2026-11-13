@@ -2,6 +2,7 @@
 #include "process.hpp"
 #include "terminal.hpp"
 #include "dates.hpp"
+#include "presentation_titles.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -609,7 +610,13 @@ Only if no on-topic delivery exists, select its newest useful peripheral deliver
 Never disguise a known future delivery as an undated one.
 Relevance is an integer: 3 directly covers the requested topic, 2 substantially related, 1 peripheral but useful.
 The application derives the customer from the first folder under the fixed Customers root.
-Extract a concise session subject from evidence; use "Unknown" if missing.
+Use the curated presentation titles below when assessing relevance to the user query and identifying the subject.
+When supplied session evidence identifies a known presentation, including an abbreviated or paraphrased title,
+return its exact curated title as subject. Distinguish presentations sharing a broad topic: a generic vector-search
+mention alone does not identify a specific vector-search presentation. Do not force an ambiguous match or infer
+that a presentation was delivered merely because its title appears in this catalog. The catalog is reference
+vocabulary, not evidence of delivery or relevance; assess each candidate using its supplied evidence.
+For an unrecognized or ambiguous presentation, extract a concise evidence-based subject; use "Unknown" if missing.
 The date must be the delivery date, not a preparation, planned future session, document update, or unrelated date.
 Exclude sessions delivered after the supplied as_of_date (today in the user's system timezone).
 Exclude sessions with dates or January 1 year references earlier than oldest_delivery_date.
@@ -617,7 +624,10 @@ Use YYYY-MM-DD with a verbatim supporting date_evidence quote. If only the deliv
 return YYYY with a supporting quote; the application will label January 1 as a year-only reference.
 Otherwise use "Unknown" and empty date_evidence.
 Do not infer a date from file modification time. Do not invent information or return paths.
-Order does not matter; the application ranks results.)";
+Order does not matter; the application ranks results.
+
+Curated presentation titles:
+)" + std::string(kPresentationTitles);
     const std::string& today = window.today;
     json::object context{{"query", opt.query}, {"as_of_date", today}, {"oldest_delivery_date", window.oldest}, {"candidates", items}};
     auto content = api(cfg, json::array{json::object{{"role","system"},{"content",instructions}},

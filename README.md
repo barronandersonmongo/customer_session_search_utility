@@ -25,6 +25,12 @@ b. Example Corp | 2026-09-14 | Vector Search Introduction
 Open result [a], or q to quit:
 ```
 
+## Known presentation titles
+
+The LLM receives the team's curated presentation catalog for relevance assessment and subject identification. When session evidence identifies a known presentation, including an abbreviation or paraphrase, it is instructed to return the exact catalog title. Broad topic overlap alone is insufficient; ambiguous or unrecognized presentations retain an evidence-based subject (or `Unknown`). The catalog does not establish that a delivery occurred. Subject identification remains a model judgment, without independent local verification.
+
+The catalog is maintained in [`src/presentation_titles.hpp`](src/presentation_titles.hpp). Add titles there and rebuild to extend it. This affects LLM verification only; local retrieval, candidate limits, date validation, ranking, and `--local-only` behavior are unchanged.
+
 ## Technical details
 
 Repository: [customer_session_search_utility](https://github.com/barronandersonmongo/customer_session_search_utility). Progress and verification are tracked separately in [PROJECT_STATUS.md](PROJECT_STATUS.md).

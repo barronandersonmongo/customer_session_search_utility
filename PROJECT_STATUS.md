@@ -6,6 +6,8 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
+- Added the team’s 12 curated presentation titles in `src/presentation_titles.hpp` to LLM relevance and subject instructions. Evidence-supported abbreviations/paraphrases should resolve to exact titles; ambiguous matches retain evidence-based subjects. Extending the catalog requires editing that header and rebuilding. Local retrieval and ranking are unchanged; subject normalization remains model judgment.
+
 - Replaced the year-reference suffix with `*` and added a fixed six-calendar-month eligibility window, pruning locally resolved old/future candidates before scoring and LLM calls and enforcing the same window after verification.
 
 - `/home/barry/.local/bin/bfind` now links to the tracked `bin/bfind` launcher, which executes `build/bfind` with the absolute project `.env` path. Verified shell syntax and traced --help from /tmp to confirm the argument without reading the config. No credentials are embedded or sourced; no note search or API request was run.
@@ -33,6 +35,8 @@ The initial C++ command-line application is implemented and builds successfully.
 - Added 119 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Curated presentation catalog: Release configure/build and all four offline CTest suites passed. Mock search requests assert all 12 exact titles and the canonical-subject, ambiguity, and evidence instructions are present. No live LLM classification was tested, no live API request was made, and no real notes or `.env` were accessed.
 
 - Verbose matching-line text: Release configure/build and all four suites passed (118 integration passes, one root-only ownership skip, plus native suites). Each displayed result now includes up to three retained matching note lines with session-relative filenames and line numbers, bounded by the existing 1,200-byte retention limit and escaped for terminal safety. This supersedes the earlier omission of matching note bodies from verbose explanations. Tests verify actual matching text, the three-line cap, Unicode-control escaping, omission of nonmatching context, and unchanged ordinary stdout. Uses existing in-memory ripgrep text, with no extra file reads or LLM requests. No real `.env`, customer-note contents, or live API calls were used. Private usage notes updated locally and remain ignored.
 
