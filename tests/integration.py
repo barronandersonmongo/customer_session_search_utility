@@ -298,6 +298,21 @@ class Integration(unittest.TestCase):
                          str(self.root / 'Recent') + '\n\n')
         self.assertEqual(result.stderr, 'Model-generated results: check customer, date, and subject in the folder before relying on them.\n')
 
+    def test_model_fields_escape_unicode_terminal_controls(self):
+        self.env['TEST_RESULTS'] = json.dumps({'Recent': dict(customer='Café\u202e\u0085', subject='東京\u2066topic\u2069')})
+        result = self.run_app('Vector Search')
+        self.assertIn('Café\\u202E\\u0085', result.stdout)
+        self.assertIn('東京\\u2066topic\\u2069', result.stdout)
+        self.assertNotIn('\u202e', result.stdout)
+
+    def test_folder_display_escapes_controls_without_renaming(self):
+        name = 'Café\u202e\u009b'
+        folder = self.note(name, 'Vector Search\n')
+        result = self.run_app('--local-only', 'Vector Search')
+        self.assertIn('Café\\u202E\\u009B', result.stdout)
+        self.assertNotIn('\u202e', result.stdout)
+        self.assertTrue(folder.is_dir())
+
     def test_model_notice_absent_without_verified_results(self):
         for args, mode in ((('--local-only', 'Vector Search'), ''), (('absent-topic',), ''),
                            (('Vector Search',), 'empty'), (('--check-connection',), '')):

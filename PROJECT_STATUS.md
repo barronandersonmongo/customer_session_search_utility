@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 88 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 90 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Terminal hardening: configure/build and all three suites passed (89 integration passes, one root-only skip, plus native Unicode and process suites). Native cases cover C1, bidi controls, Unicode separators, invalid/overlong/surrogate/out-of-range/truncated UTF-8, and preserved international text. Integration cases verify escaped model fields and folder display without renaming. No usage audit was added, per the user.
 
 - Safe curl diagnostics: final configure/build and both CTest suites passed (87 integration passes, one root-only skip, plus native process checks). Synthetic exit-code tests cover 5/6/7/28/35/51/52/56/58/59/60/77/99, asserting specific messages and no secret/URL/request leakage from child stderr. A response over 1 MiB gets its own error before the killed child status. Exit-code meanings were checked against the installed curl manual. No live API request or real `.env`/customer-note content access.
 
@@ -93,3 +95,7 @@ Update this document when implementation progress, readiness, completed verifica
 ## Retrieval layout and scope decisions
 
 Metadata inspection confirmed customer/year/dated-topic/document folders, potentially with multiple documents per session; the user also confirmed legacy notes directly under years. This layout is now supported without merging whole years. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files are included, with hidden files and binary content still excluded. The fixed customer root anchors grouping; configurable and narrowed search roots have been removed. The ignore decision is implemented with `--no-ignore` and no `--hidden`; there are no outstanding layout or ignore-policy questions from this review.
+
+## Hardening decisions
+
+The user declined any usage audit or persistent usage log. Existing proxy and custom CA settings must be preserved because company requirements are unknown. Curl will be given an explicit environment policy while Dolphin retains desktop integration. The folder canonicalization-to-launch swap race remains a low-priority residual risk; no claim is made that a second path check eliminates it.

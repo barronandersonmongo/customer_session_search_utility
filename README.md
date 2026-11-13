@@ -62,6 +62,10 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 
 ### Limits of verification
 
+Folder containment is checked before launching Dolphin, but a concurrent folder/symlink swap between validation and launch remains possible. The launcher is not an atomic filesystem sandbox.
+
+Terminal output escapes C1 controls, bidi formatting controls, Unicode line/paragraph separators, and invalid UTF-8 bytes. Ordinary international text is preserved. Escaping affects display only; folder opening uses the actual validated path. The application does not keep a usage audit or persistent usage log.
+
 Missing, null, or non-string customer/subject/date fields are treated as unknown, and unusable date evidence becomes empty. A customer over 200 bytes or subject over 300 bytes skips only that item with one stderr count; if every item is oversized, the response fails. Non-object items, invalid IDs or relevance, and duplicate IDs still reject the whole response. A response containing only evidenced future deliveries is a successful empty result.
 
 After an LLM search returns results, a short stderr notice reminds you to check the customer, delivery date, and subject in the folder before relying on them. It does not appear for local-only searches, empty results, or connection checks, and the stdout result list is unchanged.

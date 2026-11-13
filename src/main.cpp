@@ -1,5 +1,6 @@
 #include <boost/json/src.hpp>
 #include "process.hpp"
+#include "terminal.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -42,10 +43,6 @@ std::string trim(std::string s) {
 }
 std::string lower(std::string s) {
     for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-std::string clean(std::string s) {
-    for (auto& c : s) if (static_cast<unsigned char>(c) < 32 || c == 127) c = ' ';
     return s;
 }
 // Start a desktop app independently: do not wait for or kill its GUI lifetime.
