@@ -193,6 +193,19 @@ class Integration(unittest.TestCase):
         self.assertIn('No local matches', result.stdout)
         self.assertFalse((self.base / 'called').exists())
 
+    def test_model_notice_is_stderr_only_and_stdout_is_unchanged(self):
+        result = self.run_app('--root', str(self.root / 'Recent'), 'Vector Search')
+        self.assertEqual(result.stdout, '1. Recent | 2026-10-22 | Vector Search Workshop\n   ' +
+                         str(self.root / 'Recent') + '\n\n')
+        self.assertEqual(result.stderr, 'Model-generated results: check customer, date, and subject in the folder before relying on them.\n')
+
+    def test_model_notice_absent_without_verified_results(self):
+        for args, mode in ((('--local-only', 'Vector Search'), ''), (('absent-topic',), ''),
+                           (('Vector Search',), 'empty'), (('--check-connection',), '')):
+            with self.subTest(args=args, mode=mode):
+                result = self.run_app(*args, mode=mode)
+                self.assertNotIn('Model-generated results', result.stdout + result.stderr)
+
     def test_empty_verified_results(self):
         self.assertIn('No relevant sessions', self.run_app('Vector Search', mode='empty').stdout)
 

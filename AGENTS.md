@@ -24,6 +24,8 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Retrieve topic matches locally with ripgrep and bounded surrounding context. Group related matches and remove duplicates before invoking the LLM.
 - Use the LLM to verify relevance and extract customer, delivery date, and subject from the supplied evidence.
 - Show condensed, numbered results containing the full folder path, customer, date, and subject. Suppress other noise.
+- After nonempty LLM-generated results, print one short stderr reminder to check customer, date, and subject in the folder before relying on them. Preserve stdout formatting and omit the reminder for local-only searches, empty results, and connection checks.
+- Document that local validation does not authenticate notes or detect convincing planted content. Customer and subject are not independently verified against excerpts; quoted dates do not prove actual deliveries.
 - Treat relevance 2 and 3 as one on-topic group and rank by validated delivery date newest first, with Unknown dates last in the group. Retain relevance-1 peripheral results after all on-topic results, ordered by the same date rules. Break ties by relevance, local score, then original candidate order. Keep the grouping rule centralized in `on_topic()` and preserve a strict weak ordering. Position 1 is the newest dated on-topic candidate when available.
 - Offer to open the selected result folder in Dolphin. Ask for the result number, use position 1 when Enter is pressed, and support quitting without opening a folder.
 - Do not persist or cache search results or extracted note content. Keep intermediate search data in memory.

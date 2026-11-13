@@ -508,6 +508,8 @@ int main(int argc, char** argv) {
             std::cout << i + 1 << ". " << r.customer << " | " << r.date << " | " << r.subject << '\n'
                       << "   " << clean(candidates[r.id].folder.string()) << "\n\n";
         }
+        if (!opt.local)
+            std::cerr << "Model-generated results: check customer, date, and subject in the folder before relying on them.\n";
         if (!opt.no_open) open_folder(results, candidates, root);
         return 0;
     } catch (const fs::filesystem_error&) { std::cerr << "Error: Cannot access the configured file or directory.\n"; }

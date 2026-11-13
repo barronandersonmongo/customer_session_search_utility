@@ -54,6 +54,12 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 - Relevance 2 (substantially related) and 3 (direct) form one on-topic group, sorted by validated date newest first, with unknown dates last. Relevance 1 (peripheral) is retained after that entire group and sorted the same way. Remaining ties use relevance, local search score, and original candidate order, in that sequence. Thus an unknown-dated on-topic session still appears before a dated peripheral session. The on-topic threshold lives in the named `on_topic()` function.
 - Folder-opening prompts are skipped when stdin is not a terminal or `--no-open` is supplied.
 
+### Limits of verification
+
+After an LLM search returns results, a short stderr notice reminds you to check the customer, delivery date, and subject in the folder before relying on them. It does not appear for local-only searches, empty results, or connection checks, and the stdout result list is unchanged.
+
+Local checks validate candidate IDs, relevance ranges, calendar dates, and matching date evidence; they do not authenticate what the notes claim. Customer and subject are not independently verified against excerpts. A convincing planted note with a forged past delivery date can still mislead the model and rank highly. Matching evidence proves that the source contains a date, not that a delivery happened.
+
 ### Build
 
 Dependencies: a C++17 compiler, CMake 3.18+, Boost headers with Boost.JSON (1.75+), ripgrep, and curl. Python 3 is used for offline tests; Dolphin is optional for opening folders.
