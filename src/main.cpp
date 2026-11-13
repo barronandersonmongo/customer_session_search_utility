@@ -495,7 +495,17 @@ bool date_supported(const std::string& date, const std::string& evidence) {
         if (std::stoi((*it)[1]) == day && std::stoi((*it)[2]) == year) return true;
     return false;
 }
-struct Result { size_t id; std::string customer, date, subject; int relevance; };
+struct Result { size_t id; std::string customer, date, subject; int relevance; bool year_only = false; };
+std::string year_start(const std::string& year) {
+    return year.size() == 4 && valid_date(year + "-01-01") ? year + "-01-01" : "";
+}
+std::string folder_year_start(const fs::path& folder, const fs::path& root) {
+    auto relative = folder.lexically_relative(root);
+    auto part = relative.begin();
+    if (part == relative.end() || *part == ".." || *part == ".") return "";
+    if (++part == relative.end()) return "";
+    return year_start(part->string());
+}
 constexpr int kMinimumDirectCoveragePercent = 50;
 int cap_relevance(int relevance, const Candidate& candidate) {
     const int required = (candidate.query_term_count * kMinimumDirectCoveragePercent + 99) / 100;
@@ -513,7 +523,7 @@ std::string local_today() {
     return date;
 }
 std::vector<Result> verify(const Options& opt, const std::vector<Candidate>& candidates,
-                           const std::map<std::string, std::string>& cfg, const Progress& progress) {
+                           const std::map<std::string, std::string>& cfg, const Progress& progress, const fs::path& root) {
     progress.log("Verifying " + std::to_string(candidates.size()) + " candidates with the LLM.");
     json::array items;
     for (size_t i = 0; i < candidates.size(); ++i)
@@ -531,7 +541,9 @@ Relevance is an integer: 3 directly covers the requested topic, 2 substantially 
 Extract customer and concise session subject from evidence; use "Unknown" if missing.
 The date must be the delivery date, not a preparation, planned future session, document update, or unrelated date.
 Exclude sessions delivered after the supplied as_of_date (today in the user's system timezone).
-Use YYYY-MM-DD with a verbatim supporting date_evidence quote; otherwise use "Unknown" and empty date_evidence.
+Use YYYY-MM-DD with a verbatim supporting date_evidence quote. If only the delivery year is known,
+return YYYY with a supporting quote; the application will label January 1 as a year-only reference.
+Otherwise use "Unknown" and empty date_evidence.
 Do not infer a date from file modification time. Do not invent information or return paths.
 Order does not matter; the application ranks results.)";
     const std::string today = local_today();
@@ -539,7 +551,7 @@ Order does not matter; the application ranks results.)";
     auto content = api(cfg, json::array{json::object{{"role","system"},{"content",instructions}},
                                       json::object{{"role","user"},{"content",json::serialize(context)}}}, kSearchCompletionTokens, true, progress);
     std::vector<Result> results; std::set<size_t> ids;
-    size_t oversized = 0, returned = 0, future = 0, unknown = 0, capped = 0;
+    size_t oversized = 0, returned = 0, future = 0, unknown = 0, capped = 0, year_references = 0;
     progress.log("Validating model IDs, fields, dates, evidence, and relevance coverage.");
     try {
         auto parsed = json::parse(content);
@@ -561,13 +573,23 @@ Order does not matter; the application ranks results.)";
             if (customer.size() > 200 || subject.size() > 300) { ++oversized; continue; }
             std::string date = text(item, "date"), evidence = text(item, "date_evidence");
             std::string source = candidates[id].folder.string() + '\n' + candidates[id].excerpt;
+            const std::string model_year = year_start(date);
+            const bool quoted = !evidence.empty() && evidence.size() <= 1000 && source.find(evidence) != std::string::npos;
             if (evidence.empty() || evidence.size() > 1000 || source.find(evidence) == std::string::npos || !date_supported(date, evidence)) date = "Unknown";
-            // Only compare a validated, evidenced ISO date. Missing/invalid evidence remains Unknown.
+            bool year_only = false;
+            if (date == "Unknown") {
+                // A year reference is explicitly allowed, but must never masquerade as a known delivery day.
+                std::string reference = quoted && !model_year.empty() &&
+                                        std::regex_search(evidence, std::regex("(^|[^0-9])" + model_year.substr(0, 4) + "([^0-9]|$)"))
+                                        ? model_year : folder_year_start(candidates[id].folder, root);
+                if (!reference.empty()) { date = reference; year_only = true; }
+            }
             if (date != "Unknown" && date > today) { ++future; continue; }
             if (date == "Unknown") ++unknown;
+            if (year_only) ++year_references;
             if (cap_relevance(static_cast<int>(relevance), candidates[id]) != relevance) ++capped;
             results.push_back({id, customer.empty() ? "Unknown" : clean(customer), date,
-                               subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id])});
+                               subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id]), year_only});
         }
         if (oversized) std::cerr << "Skipped " << oversized << " model result(s) with oversized customer or subject fields.\n";
         // Future-only results are a valid empty search; only oversized items were unusable here.
@@ -575,7 +597,8 @@ Order does not matter; the application ranks results.)";
     } catch (...) { throw std::runtime_error("LLM returned invalid session data; no results were accepted."); }
     progress.log("Validation findings: " + std::to_string(returned) + " returned; " + std::to_string(results.size()) +
                  " accepted; " + std::to_string(future) + " future deliveries excluded; " + std::to_string(oversized) +
-                 " oversized skipped; " + std::to_string(unknown) + " unknown dates; " + std::to_string(capped) + " relevance ratings capped.");
+                 " oversized skipped; " + std::to_string(unknown) + " unknown dates; " + std::to_string(year_references) +
+                 " year-only references; " + std::to_string(capped) + " relevance ratings capped.");
     std::sort(results.begin(), results.end(), [&](const Result& a, const Result& b) {
         if (on_topic(a) != on_topic(b)) return on_topic(a);
         const bool ad = a.date != "Unknown", bd = b.date != "Unknown";
@@ -586,7 +609,7 @@ Order does not matter; the application ranks results.)";
             return candidates[a.id].score > candidates[b.id].score;
         return a.id < b.id;
     });
-    progress.log("Ranked accepted sessions by on-topic group, validated recency, relevance, and local score.");
+    progress.log("Ranked accepted sessions by on-topic group, date/reference recency, relevance, and local score.");
     return results;
 }
 void open_folder(const std::vector<Result>& results, const std::vector<Candidate>& candidates, const fs::path& root) {
@@ -636,8 +659,13 @@ int main(int argc, char** argv) {
         if (opt.local) {
             progress.log("Local-only mode: skipping LLM verification.");
             std::cerr << "Local matches only; customer, delivery date, and relevance are unverified.\n";
-            for (size_t i = 0; i < candidates.size(); ++i) results.push_back({i,"Unknown","Unknown","Unverified local topic match",1});
-        } else results = verify(opt, candidates, cfg, progress);
+            const std::string today = local_today();
+            for (size_t i = 0; i < candidates.size(); ++i) {
+                const std::string reference = folder_year_start(candidates[i].folder, root);
+                if (!reference.empty() && reference > today) continue;
+                results.push_back({i,"Unknown",reference.empty() ? "Unknown" : reference,"Unverified local topic match",1,!reference.empty()});
+            }
+        } else results = verify(opt, candidates, cfg, progress, root);
         progress.log("Displaying up to " + std::to_string(opt.results) + " of " + std::to_string(results.size()) + " results.");
         if (results.size() > static_cast<size_t>(opt.results)) results.resize(opt.results);
         if (results.empty()) {
@@ -646,7 +674,7 @@ int main(int argc, char** argv) {
         }
         for (size_t i = 0; i < results.size(); ++i) {
             const auto& r = results[i];
-            std::cout << i + 1 << ". " << r.customer << " | " << r.date << " | " << r.subject << '\n'
+            std::cout << i + 1 << ". " << r.customer << " | " << r.date << (r.year_only ? " (year reference)" : "") << " | " << r.subject << '\n'
                       << "   " << clean(candidates[r.id].folder.string()) << "\n\n";
         }
         if (!opt.local)

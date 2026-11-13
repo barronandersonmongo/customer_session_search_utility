@@ -509,6 +509,72 @@ class Integration(unittest.TestCase):
         self.assertEqual(result.stdout.count('\n   '), 2)
         self.assertEqual(result.stdout.count(str(year)), 2)
 
+    def test_missing_delivery_date_uses_folder_year_reference(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2025'
+        year.mkdir(parents=True)
+        (year / 'notes.txt').write_text('Vector Search\nNo precise delivery date recorded.\n')
+        self.env['TEST_RESULTS'] = json.dumps({'2025': dict(date='Unknown', date_evidence='')})
+        result = self.run_app('--verbose', 'Vector Search')
+        self.assertIn('2025-01-01 (year reference)', result.stdout)
+        self.assertIn('1 year-only references', result.stderr)
+
+    def test_evidenced_year_only_in_notes_uses_year_reference(self):
+        self.ranking_fixture([])
+        self.note('YearOnly', 'Vector Search\nDelivered during 2024.\n')
+        self.env['TEST_RESULTS'] = json.dumps({'YearOnly': dict(date='2024', date_evidence='Delivered during 2024.')})
+        self.assertIn('2024-01-01 (year reference)', self.run_app('Vector Search').stdout)
+
+    def test_unsubstantiated_year_is_not_used(self):
+        self.ranking_fixture([])
+        self.note('YearOnly', 'Vector Search\nCode 20240.\n')
+        self.env['TEST_RESULTS'] = json.dumps({'YearOnly': dict(date='2024', date_evidence='Code 20240.')})
+        result = self.run_app('Vector Search')
+        self.assertIn('| Unknown |', result.stdout)
+        self.assertNotIn('(year reference)', result.stdout)
+
+    def test_year_reference_sorts_by_january_first(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2025'
+        year.mkdir(parents=True)
+        (year / 'notes.txt').write_text('Vector Search\n')
+        self.note('Old', 'Vector Search\nDelivered: 2024-12-31\n')
+        self.note('Dated', 'Vector Search\nDelivered: 2025-02-01\n')
+        self.env['TEST_RESULTS'] = json.dumps({'2025': dict(date='Unknown', date_evidence=''),
+                                               'Old': dict(date='2024-12-31', date_evidence='2024-12-31'),
+                                               'Dated': dict(date='2025-02-01', date_evidence='2025-02-01')})
+        self.assertEqual(self.ranked_customers(), ['Dated', '2025', 'Old'])
+
+    def test_valid_delivery_date_takes_precedence_over_folder_year(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2025'
+        year.mkdir(parents=True)
+        (year / 'notes.txt').write_text('Vector Search\nDelivered: 2024-10-22\n')
+        self.env['TEST_RESULTS'] = json.dumps({'2025': dict(date='2024-10-22', date_evidence='2024-10-22')})
+        result = self.run_app('Vector Search')
+        self.assertIn('| 2024-10-22 |', result.stdout)
+        self.assertNotIn('(year reference)', result.stdout)
+
+    def test_future_year_reference_is_excluded(self):
+        self.ranking_fixture([])
+        future = str(datetime.datetime.now(datetime.timezone.utc).year + 1)
+        year = self.root / 'Acme' / future
+        year.mkdir(parents=True)
+        (year / 'notes.txt').write_text('Vector Search\n')
+        self.env['TEST_RESULTS'] = json.dumps({future: dict(date='Unknown', date_evidence='')})
+        result = self.run_app('Vector Search')
+        self.assertIn('No relevant sessions', result.stdout)
+
+    def test_local_only_can_show_year_reference_without_credentials(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2025'
+        year.mkdir(parents=True)
+        (year / 'notes.txt').write_text('Vector Search\n')
+        self.config.write_text('')
+        result = self.run_app('--local-only', 'Vector Search')
+        self.assertIn('2025-01-01 (year reference)', result.stdout)
+        self.assertFalse((self.base / 'called').exists())
+
     def test_session_without_year_folder_still_groups_documents(self):
         self.ranking_fixture([])
         folder = self.root / 'Acme' / '2025-09-14 - Workshop'

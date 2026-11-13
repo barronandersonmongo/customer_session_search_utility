@@ -28,9 +28,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 95 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 102 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Year-only references: build and all three suites passed (101 integration passes, one root-only ownership skip, plus native suites). Tests verify January 1 fallback from customer/year folders or quoted year-only model values, rejection of an ungrounded numeric prefix, conservative reference-date sorting, full-date precedence, future-year exclusion, and local-only references without credentials. References display `(year reference)` and are counted in verbose validation. No real `.env` or customer-note contents accessed; private usage notes updated locally and remain ignored.
 
 - Verbose progress: build and all three suites passed (94 integration passes, one root-only skip, plus native Unicode/process checks). --verbose/-v reports timestamped stages, counts, candidate scores/coverage, excerpt sizes, optional token usage, and validation/ranking outcomes on stderr. A slow mocked LLM proves a two-second heartbeat arrives before completion; native tests verify child progress without weakening timeout/reaping behavior. Tests verify unchanged stdout, sensitive-value/excerpt redaction, local-only/no-match skips, and validation counts. No live API call, real note search, or real `.env` access. Private BARRY_README.md usage was updated locally and remains Git-ignored.
 
