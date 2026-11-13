@@ -129,7 +129,7 @@ struct Options {
     std::optional<fs::path> env;
     fs::path root;
     std::string query;
-    int candidates = 20, results = 10, context = 6;
+    int candidates = 40, results = 10, context = 6;
     bool no_open = false, local = false, check = false;
 };
 int number(const std::string& s, int max) {
@@ -150,7 +150,7 @@ Options options(int argc, char** argv) {
                          "  --env FILE          Explicit config file (default: $XDG_CONFIG_HOME/bfind/.env\n"
                          "                      or $HOME/.config/bfind/.env)\n"
                          "  --limit N           Display at most N results (default 10, max 30)\n"
-                         "  --candidates N      Send at most N folders (default 20, max 40)\n"
+                         "  --candidates N      Send at most N folders (default 40, max 40)\n"
                          "  --context N         Surrounding lines per match (default 6, max 30)\n"
                          "  --no-open           Do not prompt to open a folder\n"
                          "  --local-only        Show unverified local matches without calling the LLM\n"
@@ -284,6 +284,7 @@ struct Candidate {
     std::map<std::string, std::map<int, std::string>> lines;
     int hits = 0, score = 0;
     int excerpt_term_coverage = 0, query_term_count = 0;
+    std::vector<size_t> retrieval_terms;
     std::string excerpt;
 };
 bool inside(const fs::path& path, const fs::path& root) {
@@ -297,7 +298,13 @@ std::vector<std::string> terms(const std::string& query) {
         term = lower(term);
         if (seen.insert(term).second) result.push_back(term);
     }
-    return result;
+    static const std::set<std::string> stopwords{
+        "a", "an", "and", "are", "as", "at", "be", "been", "being", "by", "for", "from",
+        "how", "in", "into", "is", "it", "of", "on", "or", "that", "the", "this", "to",
+        "was", "were", "what", "when", "where", "which", "who", "why", "with"};
+    std::vector<std::string> filtered;
+    for (const auto& word : result) if (!stopwords.count(word)) filtered.push_back(word);
+    return filtered.empty() ? result : filtered;
 }
 std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
     auto words = terms(opt.query);
@@ -341,13 +348,16 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
         if (type == "match") ++candidate.hits;
     }
     std::vector<Candidate> candidates;
+    std::vector<size_t> folder_frequency(words.size(), 0);
     for (auto& item : grouped) {
         auto& c = item.second;
         std::string searchable = lower(c.folder.string());
         for (const auto& file : c.lines) for (const auto& l : file.second) searchable += lower(l.second);
-        int coverage = 0;
-        for (const auto& word : words) if (searchable.find(word) != std::string::npos) ++coverage;
-        c.score = coverage * 100 + (searchable.find(lower(opt.query)) != std::string::npos ? 50 : 0) + std::min(c.hits, 20);
+        for (size_t i = 0; i < words.size(); ++i) if (searchable.find(words[i]) != std::string::npos) {
+            c.retrieval_terms.push_back(i);
+            ++folder_frequency[i];
+        }
+        c.score = (searchable.find(lower(opt.query)) != std::string::npos ? 50 : 0) + std::min(c.hits, 20);
         // Put actual matches before surrounding lines so the excerpt budget retains the topic.
         std::set<std::string> seen;
         std::string submitted_note_text;
@@ -371,10 +381,15 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
         c.lines.clear();
         candidates.push_back(std::move(c));
     }
+    for (auto& candidate : candidates) {
+        for (size_t term : candidate.retrieval_terms)
+            candidate.score += 100 + static_cast<int>(900 * (candidates.size() - folder_frequency[term]) / candidates.size());
+        candidate.retrieval_terms.clear();
+    }
     std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
         if (a.score != b.score) return a.score > b.score;
-        // ISO dates embedded in otherwise similar folder paths naturally sort newest first.
-        return a.folder.string() > b.folder.string();
+        // Stable fallback only: folder names are not verified delivery dates.
+        return a.folder.string() < b.folder.string();
     });
     if (candidates.size() > static_cast<size_t>(opt.candidates)) {
         std::cerr << "Considering the top " << opt.candidates << " matching folders; the newest session may be outside this shortlist. Use --candidates or narrow --root for broader coverage.\n";

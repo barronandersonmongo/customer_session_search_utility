@@ -40,7 +40,9 @@ else:
     context = json.loads(request['messages'][1]['content'])
     assert context['as_of_date'] == datetime.date.today().isoformat()
     candidates = context['candidates']
-    assert len(candidates) <= int(os.environ.get('EXPECTED_CANDIDATES', '20'))
+    assert len(candidates) <= int(os.environ.get('EXPECTED_CANDIDATES', '40'))
+    if 'EXPECTED_EXACT_CANDIDATES' in os.environ:
+        assert len(candidates) == int(os.environ['EXPECTED_EXACT_CANDIDATES'])
     assert all(len(c['excerpts'].encode()) <= 3000 for c in candidates)
     results = []
     for c in candidates:
@@ -224,7 +226,7 @@ class Integration(unittest.TestCase):
     def test_equal_dates_use_relevance_score_and_candidate_order(self):
         self.ranking_fixture([('DirectHigh', '2025-01-01', 3, 3), ('DirectLowZ', '2025-01-01', 3, 1),
                               ('DirectLowA', '2025-01-01', 3, 1), ('RelatedHigh', '2025-01-01', 2, 5)])
-        expected = ['DirectHigh', 'DirectLowZ', 'DirectLowA', 'RelatedHigh']
+        expected = ['DirectHigh', 'DirectLowA', 'DirectLowZ', 'RelatedHigh']
         for mode in ('', 'reverse', 'reverse'):
             self.assertEqual(self.ranked_customers(mode=mode), expected)
 
@@ -333,6 +335,36 @@ class Integration(unittest.TestCase):
         result = self.run_app('--candidates', '1', '--limit', '1', 'Vector Search')
         self.assertIn('top 1 matching folders', result.stderr)
         self.assertEqual(result.stdout.count('\n   '), 1)
+
+    def test_stopwords_do_not_retrieve_unrelated_notes(self):
+        self.note('Noise', 'the unrelated workshop\n')
+        target = self.note('Quasars', 'quasars workshop\n')
+        result = self.run_app('--local-only', 'the quasars')
+        self.assertIn(str(target), result.stdout)
+        self.assertEqual(result.stdout.count('\n   '), 1)
+
+    def test_all_stopword_query_still_searches(self):
+        self.note('Stopwords', 'the and\n')
+        self.assertIn('Stopwords', self.run_app('--local-only', 'the and').stdout)
+
+    def test_rare_term_beats_common_term_in_shortlist(self):
+        self.ranking_fixture([])
+        self.note('Rare', 'rare\n')
+        for i in range(8): self.note('Common' + str(i), 'common\n')
+        result = self.run_app('--local-only', '--candidates', '1', 'common rare')
+        self.assertIn(str(self.root / 'Rare'), result.stdout)
+        self.assertNotIn(str(self.root / 'Common'), result.stdout)
+
+    def test_default_shortlist_contains_forty_candidates(self):
+        self.ranking_fixture([])
+        for i in range(41): self.note('Session' + str(i), 'Vector Search\nDelivered: 2025-09-14\n')
+        self.env['EXPECTED_EXACT_CANDIDATES'] = '40'
+        result = self.run_app('Vector Search')
+        self.assertIn('top 40 matching folders', result.stderr)
+
+    def test_filtered_terms_are_used_by_coverage_cap(self):
+        self.coverage_fixture('alpha\n', 'alpha exercise one\nalpha exercise two\n')
+        self.assertEqual(self.ranked_customers('the and alpha'), ['Claimed', 'Reference'])
 
     def test_http_error_hides_response_and_credentials(self):
         result = self.run_app('Vector Search', mode='http', success=False)

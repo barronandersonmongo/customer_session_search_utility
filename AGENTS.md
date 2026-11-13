@@ -34,6 +34,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Report unknown dates as unknown. Do not substitute file modification times for delivery dates.
 - Exclude results whose evidenced, valid delivery date is after today; do not convert a confirmed future delivery to Unknown. Accept today's deliveries. Capture today's local system date once per verification and supply it to the LLM. Unsupported or invalid date evidence still becomes Unknown.
 - Preserve bounded lexical candidate selection and explicitly document that newest-first ranking applies only to verified candidates. Do not promote candidates based on unverified dates; warn about possible omitted recent sessions when the candidate limit is reached.
+- Default to 40 candidates (maximum 40). Filter common English stopwords, falling back to all terms for all-stopword queries; use these filtered distinct terms for retrieval and the coverage cap. Score terms by retrieved-folder rarity with integer weights, retain the original-query phrase bonus and capped hit bonus, and use ascending path order for deterministic score ties. Never use folder-name dates as delivery evidence for shortlist ordering.
 
 ## Configuration and Grove integration
 

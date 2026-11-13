@@ -32,8 +32,8 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 ### Architecture
 
 1. The C++ CLI loads configuration and accepts a topic.
-2. Ripgrep searches for any of the topic's whitespace-separated words as case-insensitive literal text, collecting matching lines and nearby context.
-3. The application groups matches by their containing folder, removes duplicate lines, and selects candidates using term coverage, exact-phrase presence, and match count.
+2. Ripgrep searches for distinct whitespace-separated query words as case-insensitive literal text, dropping common English stopwords unless that would remove every term, and collects nearby context.
+3. The application groups matches by their containing folder, removes duplicate lines, and selects candidates using term rarity across retrieved folders, original-query phrase presence, and match count. Integer term weights range from 100 to 999; the phrase bonus is 50 and the hit bonus is capped at 20. Equal scores use ascending folder path order, never unverified folder dates.
 4. A single Grove Chat Completions request sends the query, candidate IDs, folder paths, and bounded excerpts to GPT-6 Astra.
 5. The application validates IDs, relevance levels, and date evidence, excludes future deliveries, then places direct/substantially related sessions first, newest delivery first. Peripheral sessions follow.
 6. Condensed results are displayed. In an interactive terminal, an optional selection prompt launches Dolphin independently of the CLI.
@@ -44,7 +44,7 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 - Curl handles HTTPS through an argument-safe child process. The key and request body travel through stdin, never command-line arguments or temporary request files. Redirects are not followed, and curl's user configuration is disabled.
 - Ripgrep and Dolphin are invoked directly without a shell. Queries and folder names are passed as arguments.
 - Search results and intermediate note content remain in memory. There is no persistent cache, index, or embeddings database.
-- Default limits: 20 candidate folders, 3,000 excerpt bytes per folder, and 16,384 completion tokens in one LLM request (2,048 for connection checks). The completion limit includes visible output and reasoning tokens. Candidate IDs and paths add a small amount of context beyond the excerpt budget. These limits provide headroom; they do not guarantee completion within the request timeout.
+- Default limits: 40 candidate folders, 3,000 excerpt bytes per folder, and 16,384 completion tokens in one LLM request (2,048 for connection checks). The completion limit includes visible output and reasoning tokens. Candidate IDs and paths add a small amount of context beyond the excerpt budget. These limits provide headroom; they do not guarantee completion within the request timeout.
 - Retrieval limits: 2 MiB per file, 12 matches per file, six surrounding lines, 1,200 bytes per retained line, 12 files and 100 lines per file per folder. Search output is capped at 16 MiB and the local search times out after 30 seconds. Hitting the output cap prints a warning and uses the complete records collected so far.
 - API connection timeout is 10 seconds; the full request timeout is 55 seconds. Requests are not automatically retried.
 - Dates require a valid calendar date plus a matching quote from the supplied notes or path. Supported evidence formats include `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, U.S. `MM/DD/YYYY`, and English month names with a four-digit year. File modification times are not used. A result with an evidenced delivery date after today is excluded entirely; today's deliveries are accepted. Today is captured once per verification using the system clock and local timezone (including `TZ`, if set), and is also supplied to the LLM. Dates without valid matching evidence remain `Unknown`.
@@ -62,7 +62,7 @@ After an LLM search returns results, a short stderr notice reminds you to check 
 
 Local checks validate candidate IDs, relevance ranges, calendar dates, and matching date evidence; they do not authenticate what the notes claim. Customer and subject are not independently verified against excerpts. A convincing planted note with a forged past delivery date can still mislead the model and rank highly. Matching evidence proves that the source contains a date, not that a delivery happened.
 
-A direct relevance rating of 3 requires at least 50% of the distinct query terms, rounded up, in the note text actually retained in the submitted excerpt. Otherwise it is capped at 2; ratings 1 and 2 are unchanged, and the check never drops a result. Coverage uses case-insensitive literal matching and excludes folder paths, filename prefixes, and lines omitted by the excerpt budget. A single-term query passes when that term is present in the submitted note text. The percentage is centralized in `kMinimumDirectCoveragePercent`.
+A direct relevance rating of 3 requires at least 50% of the distinct non-stopword query terms (or all terms for an all-stopword query), rounded up, in the note text actually retained in the submitted excerpt. Otherwise it is capped at 2; ratings 1 and 2 are unchanged, and the check never drops a result. Coverage uses case-insensitive literal matching and excludes folder paths, filename prefixes, and lines omitted by the excerpt budget. A single-term query passes when that term is present in the submitted note text. The percentage is centralized in `kMinimumDirectCoveragePercent`.
 
 This is a lexical sanity check, not a prompt-injection defense: planted content can include all query terms. Because ratings 2 and 3 both qualify as on-topic and recency takes priority, this cap affects relevance tie-breaking, not on-topic eligibility or the date ordering. Evidenced future deliveries remain excluded entirely.
 
@@ -156,7 +156,7 @@ Additional options:
 ```text
 --env FILE       Explicit trusted config file (default: XDG/HOME user config)
 --limit N        Maximum displayed results (default 10, maximum 30)
---candidates N   Maximum folders sent to the LLM (default 20, maximum 40)
+--candidates N   Maximum folders sent to the LLM (default 40, maximum 40)
 --context N      Surrounding lines per match (default 6, maximum 30)
 --no-open        Suppress the Dolphin prompt
 --help           Show command-line help
