@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 85 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 86 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Terminal prompt guard: build and both suites passed (85 integration passes, one root-only skip, plus native checks). A pty stdin with piped stdout exits without input or a prompt and never invokes Dolphin; fully interactive selection tests still pass. The prompt now requires both standard input and output to be terminals.
 
 - Dolphin display preflight: build and both suites passed (84 integration passes, one root-only skip, plus native process checks). Missing and empty display variables fail clearly without invoking mocked Dolphin; a synthetic Wayland-only environment works. All interactive tests now set an explicit synthetic DISPLAY. No actual window or display connectivity was tested; set variables are only a prerequisite.
 

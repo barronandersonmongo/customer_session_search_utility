@@ -517,7 +517,7 @@ Order does not matter; the application ranks results.)";
     return results;
 }
 void open_folder(const std::vector<Result>& results, const std::vector<Candidate>& candidates, const fs::path& root) {
-    if (!isatty(STDIN_FILENO)) return;
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
     std::string answer;
     for (;;) {
         std::cout << "Open result [1], or q to quit: " << std::flush;

@@ -654,6 +654,20 @@ class Integration(unittest.TestCase):
         self.assertNotIn('Open result', result.stdout)
         self.assertFalse((self.base / 'opened').exists())
 
+    def test_terminal_input_with_piped_output_never_prompts(self):
+        master, slave = pty.openpty()
+        try:
+            result = subprocess.run([BINARY, '--env', str(self.config), 'Vector Search'],
+                                    env=self.env, cwd=self.base, text=True, stdin=slave,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+        finally:
+            os.close(slave)
+            os.close(master)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('1. Recent', result.stdout)
+        self.assertNotIn('Open result', result.stdout + result.stderr)
+        self.assertFalse((self.base / 'opened').exists())
+
     def test_utf8_excerpt_boundaries(self):
         self.note('Unicode', 'Vector Search ' + 'é' * 900 + '\nDelivered: 2025-09-14\n')
         self.run_app('Vector Search')
