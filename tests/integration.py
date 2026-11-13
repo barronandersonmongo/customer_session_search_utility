@@ -2,6 +2,7 @@
 
 All fixtures are synthetic and removed on completion. No real API calls are made.
 """
+import datetime
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ import unittest
 
 BINARY = str(Path(sys.argv.pop(1)).resolve())
 MOCK_CURL = r'''
-import json, os, sys
+import datetime, json, os, sys
 from pathlib import Path
 config = {}
 for line in sys.stdin.read().splitlines():
@@ -35,16 +36,20 @@ if request['messages'][0]['content'] == 'Reply with exactly OK.':
     content = 'OK'
 else:
     context = json.loads(request['messages'][1]['content'])
+    assert context['as_of_date'] == datetime.date.today().isoformat()
     candidates = context['candidates']
     assert len(candidates) <= int(os.environ.get('EXPECTED_CANDIDATES', '20'))
     assert all(len(c['excerpts'].encode()) <= 3000 for c in candidates)
     results = []
     for c in candidates:
         folder = c['folder']
-        date = '2026-10-22' if 'Recent' in folder else '2025-09-14'
+        date = '2026-10-22' if Path(folder).name in ('Recent', 'Related') else '2025-09-14'
         results.append(dict(id=c['id'], customer=Path(folder).name, date=date,
                             date_evidence=date, subject='Vector Search Workshop',
-                            relevance=2 if 'Peripheral' in folder else 3))
+                            relevance=2 if 'Related' in folder else 3))
+    for result in results:
+        result.update(json.loads(os.environ.get('TEST_RESULTS', '{}')).get(result['customer'], {}))
+    if mode == 'reverse': results.reverse()
     if mode == 'bad-id': results[0]['id'] = 99999
     if mode == 'duplicate': results.append(results[0])
     if mode == 'bad-date': results[0]['date'] = '2026-02-30'
@@ -78,7 +83,7 @@ class Integration(unittest.TestCase):
         self.env = os.environ.copy()
         for key in ('LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL', 'SEARCH_ROOT'):
             self.env.pop(key, None)
-        self.env.update(PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
+        self.env.update(TZ='UTC', PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                         HOME=str(self.base / 'home'), XDG_CONFIG_HOME=str(self.base / 'xdg'),
                         MOCK_CALLED=str(self.base / 'called'), MOCK_OPENED=str(self.base / 'opened'))
         self.config = self.base / 'settings.env'
@@ -88,7 +93,7 @@ class Integration(unittest.TestCase):
         self.config.chmod(0o600)
         self.note('Old', 'Customer: Old\nDelivered: 2025-09-14\nSubject: Vector Search Workshop\n')
         self.note('Recent', 'Customer: Recent\nDelivered: 2026-10-22\nSubject: Vector Search Workshop\n')
-        self.note('Peripheral', 'Delivered: 2026-10-22\nVector Search was a brief part of another workshop.\n')
+        self.note('Related', 'Delivered: 2026-10-22\nSubstantially related Vector Search session materials.\n')
 
     def note(self, folder, content, name='notes.txt'):
         p = self.root / folder
@@ -108,10 +113,80 @@ class Integration(unittest.TestCase):
         self.note('Recent', 'Vector Search Workshop\nDelivered: 2026-10-22\n', 'duplicate.txt')
         result = self.run_app('vector search')
         self.assertIn('1. Recent | 2026-10-22', result.stdout)
-        self.assertIn('2. Old | 2025-09-14', result.stdout)
-        self.assertIn('3. Peripheral', result.stdout)
+        self.assertIn('2. Related | 2026-10-22', result.stdout)
+        self.assertIn('3. Old | 2025-09-14', result.stdout)
         self.assertEqual(result.stdout.count(str(self.root / 'Recent')), 1)
         self.assertNotIn('Open result', result.stdout)
+
+    def ranking_fixture(self, sessions):
+        for folder in self.root.iterdir():
+            shutil.rmtree(folder)
+        overrides = {}
+        for name, date, relevance, hits in sessions:
+            self.note(name, 'Customer: ' + name + '\nDelivered: ' + date + '\n' +
+                      ''.join('Vector Search exercise ' + str(i) + '\n' for i in range(hits)))
+            overrides[name] = dict(date=date, date_evidence='' if date == 'Unknown' else date,
+                                   relevance=relevance)
+        self.env['TEST_RESULTS'] = json.dumps(overrides)
+
+    def ranked_customers(self, **kwargs):
+        result = self.run_app('Vector Search', **kwargs)
+        return [line.split('. ', 1)[1].split(' | ', 1)[0] for line in result.stdout.splitlines() if ' | ' in line]
+
+    def test_newer_substantial_session_beats_older_direct_session(self):
+        self.ranking_fixture([('Direct', '2025-01-01', 3, 1), ('Substantial', '2025-02-01', 2, 1)])
+        self.assertEqual(self.ranked_customers(), ['Substantial', 'Direct'])
+
+    def test_peripheral_group_follows_all_on_topic_results(self):
+        self.ranking_fixture([('Dated', '2025-01-01', 2, 1), ('Undated', 'Unknown', 3, 1),
+                              ('PeripheralNew', '2025-03-01', 1, 1), ('PeripheralOld', '2025-02-01', 1, 1),
+                              ('PeripheralUnknown', 'Unknown', 1, 1)])
+        self.assertEqual(self.ranked_customers(), ['Dated', 'Undated', 'PeripheralNew', 'PeripheralOld', 'PeripheralUnknown'])
+
+    def test_equal_dates_use_relevance_score_and_candidate_order(self):
+        self.ranking_fixture([('DirectHigh', '2025-01-01', 3, 3), ('DirectLowZ', '2025-01-01', 3, 1),
+                              ('DirectLowA', '2025-01-01', 3, 1), ('RelatedHigh', '2025-01-01', 2, 5)])
+        expected = ['DirectHigh', 'DirectLowZ', 'DirectLowA', 'RelatedHigh']
+        for mode in ('', 'reverse', 'reverse'):
+            self.assertEqual(self.ranked_customers(mode=mode), expected)
+
+    def test_future_delivery_is_excluded_today_is_accepted(self):
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        tomorrow = today + datetime.timedelta(days=1)
+        self.ranking_fixture([('Future', tomorrow.isoformat(), 3, 1), ('Today', today.isoformat(), 2, 1),
+                              ('Past', '2025-01-01', 3, 1)])
+        self.assertEqual(self.ranked_customers(), ['Today', 'Past'])
+
+    def test_all_future_sessions_produce_no_verified_results(self):
+        future = datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1)
+        self.ranking_fixture([('FutureOnly', future.isoformat(), 3, 1)])
+        self.assertIn('No relevant sessions', self.run_app('Vector Search').stdout)
+
+    def test_future_cutoff_uses_system_timezone(self):
+        for tz, offset in (('UTC-14', 14), ('UTC+12', -12)):
+            with self.subTest(tz=tz):
+                self.env['TZ'] = tz
+                today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=offset))).date()
+                self.ranking_fixture([('LocalToday', today.isoformat(), 3, 1),
+                                      ('LocalTomorrow', (today + datetime.timedelta(days=1)).isoformat(), 3, 1)])
+                self.assertEqual(self.ranked_customers(), ['LocalToday'])
+
+    def test_invalid_and_unsupported_future_dates_remain_unknown(self):
+        self.ranking_fixture([('Invalid', '2025-02-30', 3, 1), ('Unsupported', '9999-01-01', 3, 1),
+                              ('Dated', '2025-01-01', 2, 1)])
+        overrides = json.loads(self.env['TEST_RESULTS'])
+        overrides['Unsupported']['date_evidence'] = 'never appeared in the notes'
+        self.env['TEST_RESULTS'] = json.dumps(overrides)
+        result = self.run_app('Vector Search')
+        self.assertIn('1. Dated', result.stdout)
+        self.assertIn('Invalid | Unknown |', result.stdout)
+        self.assertIn('Unsupported | Unknown |', result.stdout)
+
+    def test_result_limit_is_applied_after_new_ranking(self):
+        self.ranking_fixture([('DirectOld', '2025-01-01', 3, 1), ('RelatedNew', '2025-02-01', 2, 1)])
+        result = self.run_app('--limit', '1', 'Vector Search')
+        self.assertIn('1. RelatedNew', result.stdout)
+        self.assertNotIn('DirectOld', result.stdout)
 
     def test_no_matches_skip_api(self):
         result = self.run_app('absent-topic')
@@ -336,7 +411,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.interact(b'\n'), ['--', str(self.root / 'Recent')])
 
     def test_dolphin_selection_and_invalid_input(self):
-        self.assertEqual(self.interact(b'999\n2\n'), ['--', str(self.root / 'Old')])
+        self.assertEqual(self.interact(b'999\n2\n'), ['--', str(self.root / 'Related')])
 
     def test_dolphin_quit(self):
         self.interact(b'q\n')

@@ -10,7 +10,7 @@ Delivering similar content to multiple customers leaves useful material scattere
 
 - Search plain-text customer event notes for a topic.
 - Identify past sessions with their customer, delivery date, subject, and full folder path.
-- See direct topic matches first, with the newest deliveries first within each relevance level.
+- See the newest on-topic deliveries first, followed by peripheral material. Future-dated deliveries are excluded.
 - Open a result folder in Dolphin by entering its number; Enter selects result 1.
 
 Missing or unsupported delivery dates appear as `Unknown`. Example output:
@@ -35,7 +35,7 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 2. Ripgrep searches for any of the topic's whitespace-separated words as case-insensitive literal text, collecting matching lines and nearby context.
 3. The application groups matches by their containing folder, removes duplicate lines, and selects candidates using term coverage, exact-phrase presence, and match count.
 4. A single Grove Chat Completions request sends the query, candidate IDs, folder paths, and bounded excerpts to GPT-6 Astra.
-5. The application validates IDs, relevance levels, and date evidence, then sorts by relevance (direct, substantial, peripheral), delivery date, and local search score.
+5. The application validates IDs, relevance levels, and date evidence, excludes future deliveries, then places direct/substantially related sessions first, newest delivery first. Peripheral sessions follow.
 6. Condensed results are displayed. In an interactive terminal, an optional selection prompt launches Dolphin independently of the CLI.
 
 ### Technical decisions and limits
@@ -47,11 +47,12 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 - Default limits: 20 candidate folders, 3,000 excerpt bytes per folder, and 4,096 output tokens in one LLM request. Candidate IDs and paths add a small amount of context beyond the excerpt budget.
 - Retrieval limits: 2 MiB per file, 12 matches per file, six surrounding lines, 1,200 bytes per retained line, 12 files and 100 lines per file per folder. Search output is capped at 16 MiB and the local search times out after 30 seconds. Hitting the output cap prints a warning and uses the complete records collected so far.
 - API connection timeout is 10 seconds; the full request timeout is 55 seconds. Requests are not automatically retried.
-- Dates require a valid calendar date plus a matching quote from the supplied notes or path. Supported evidence formats include `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, U.S. `MM/DD/YYYY`, and English month names with a four-digit year. File modification times are not used.
+- Dates require a valid calendar date plus a matching quote from the supplied notes or path. Supported evidence formats include `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, U.S. `MM/DD/YYYY`, and English month names with a four-digit year. File modification times are not used. A result with an evidenced delivery date after today is excluded entirely; today's deliveries are accepted. Today is captured once per verification using the system clock and local timezone (including `TZ`, if set), and is also supplied to the LLM. Dates without valid matching evidence remain `Unknown`.
 - Retrieval follows ripgrep's normal hidden-file, ignore-file, binary-file, and symlink exclusions. It does not extract text from PDFs or slide decks, and it cannot retrieve synonyms that share no literal query words.
-- Candidate selection is bounded and lexical, so a relevant session may be omitted before LLM processing. Narrow `--root`, refine the topic, or increase `--candidates` when needed.
-- Each containing directory is one candidate; nested folders are separate candidates. If several sessions share one directory, the LLM returns at most one session for it. LLM interpretations of relevance, customer, subject, and delivery context can still be wrong.
-- Dates are sorted newest first within each relevance level; unknown dates follow confirmed dates. Folder-opening prompts are skipped when stdin is not a terminal or `--no-open` is supplied.
+- Candidate selection is bounded and lexical, so the newest session may be omitted before LLM processing. Newest-first ordering applies to verified candidates, not every session on disk. Local selection does not promote folders based on unverified dates; narrow `--root`, refine the topic, or increase `--candidates` when needed. A warning calls out the recency limitation when the candidate limit is reached.
+- Each containing directory is one candidate; nested folders are separate candidates. If several sessions share one directory, the LLM is instructed to select its newest evidenced on-topic delivery on or before today, preferring dated on-topic sessions to undated ones. It returns a peripheral session only if none are on-topic. At most one session is returned per directory. LLM interpretations of relevance, customer, subject, and delivery context can still be wrong.
+- Relevance 2 (substantially related) and 3 (direct) form one on-topic group, sorted by validated date newest first, with unknown dates last. Relevance 1 (peripheral) is retained after that entire group and sorted the same way. Remaining ties use relevance, local search score, and original candidate order, in that sequence. Thus an unknown-dated on-topic session still appears before a dated peripheral session. The on-topic threshold lives in the named `on_topic()` function.
+- Folder-opening prompts are skipped when stdin is not a terminal or `--no-open` is supplied.
 
 ### Build
 

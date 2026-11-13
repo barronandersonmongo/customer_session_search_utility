@@ -14,18 +14,23 @@ The initial C++ command-line application is implemented and builds successfully.
 - Implemented literal, case-insensitive topic-word retrieval, bounded context, folder grouping, excerpt deduplication, and lexical candidate selection.
 - Implemented one bounded Grove request per search, using the full configured endpoint and `api-key` authentication without exposing credentials in command-line arguments.
 - Added validation for completion status, result IDs, relevance, duplicate results, calendar dates, and quoted date evidence.
-- Implemented relevance and recency sorting, condensed numbered output, unknown fields, and result limits.
+- Implemented newest-first ranking within the on-topic group (relevance 2/3), followed by retained peripheral sessions. Unknown dates follow dated results within each group; ties resolve by relevance, local score, and candidate order. The LLM is instructed to select the newest on-topic delivery within a folder as well.
+- Excluded evidenced future delivery dates using one snapshot of today's system-local date per verification, also supplied to the LLM. Invalid or unsupported evidence continues to produce Unknown dates.
+- Preserved bounded lexical shortlisting without promoting unverified dates and added an explicit warning that a newer session may be outside the shortlist.
 - Implemented Dolphin selection with result 1 as default, input validation, quitting, and noninteractive prompt suppression. Dolphin launches independently of the CLI.
 - Added `--local-only`, `--check-connection`, configurable search roots, request limits, and CLI help.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 34 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 42 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
 
+- For the ranking and future-date change, `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build -j2`, and `ctest --test-dir build --output-on-failure` succeeded. Of 42 cases, 41 passed and the root-only ownership test was skipped.
+- New ranking cases verify that newer relevance-2 sessions outrank older relevance-3 sessions, peripheral results follow the entire on-topic group, unknown dates follow dated sessions within each group, and ties use relevance, local score, and deterministic candidate order even when mock results are reversed.
+- Future-date cases verify that evidenced future deliveries are omitted, today's deliveries are retained, the cutoff follows the system timezone across UTC-12/UTC+14 boundaries, and invalid or unsupported evidence still becomes Unknown. Result limits and Dolphin selection continue to follow the displayed ranking. No live API calls were made and the real project `.env` was not accessed for this change.
 - GCC 15.2.0 builds the C++17 application through CMake with `-Wall -Wextra -Wpedantic` and no reported warnings.
-- `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build -j2`, and `ctest --test-dir build --output-on-failure` completed successfully after the config change. Of 34 integration cases, 33 passed and the synthetic ownership-change case was skipped because it requires root. CLI help describes the new defaults.
+- The config change passed configure/build and offline verification (33 passed, one root-only test skipped). CLI help describes the new defaults.
 - New cases cover hostile cwd `.env` isolation with a shell-provided key, XDG selection, HOME fallback, relative/empty XDG handling, missing or relative HOME, explicit config selection, environment-only and local-only operation, permission warnings, symlink target checks, and rejection of nonregular files.
 - Existing retrieval, ranking, date evidence, malformed-output, HTTP-error, literal-argument, configuration-precedence, resource-limit, UTF-8, noninteractive, no-persistence, and Dolphin prompt checks continue to pass. No live API call was made for the config change.
 - A live end-to-end request from the compiled application successfully retrieved and extracted a synthetic Acme Vector Search workshop delivered on 2026-10-22. No real customer notes were used; synthetic live-test files were removed.

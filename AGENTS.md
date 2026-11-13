@@ -24,11 +24,13 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Retrieve topic matches locally with ripgrep and bounded surrounding context. Group related matches and remove duplicates before invoking the LLM.
 - Use the LLM to verify relevance and extract customer, delivery date, and subject from the supplied evidence.
 - Show condensed, numbered results containing the full folder path, customer, date, and subject. Suppress other noise.
-- Rank by relevance and use recency to order similarly relevant sessions. Position 1 is the best result.
+- Treat relevance 2 and 3 as one on-topic group and rank by validated delivery date newest first, with Unknown dates last in the group. Retain relevance-1 peripheral results after all on-topic results, ordered by the same date rules. Break ties by relevance, local score, then original candidate order. Keep the grouping rule centralized in `on_topic()` and preserve a strict weak ordering. Position 1 is the newest dated on-topic candidate when available.
 - Offer to open the selected result folder in Dolphin. Ask for the result number, use position 1 when Enter is pressed, and support quitting without opening a folder.
 - Do not persist or cache search results or extracted note content. Keep intermediate search data in memory.
 - Optimize local work and LLM use by bounding candidate counts, excerpt sizes, and response length.
 - Report unknown dates as unknown. Do not substitute file modification times for delivery dates.
+- Exclude results whose evidenced, valid delivery date is after today; do not convert a confirmed future delivery to Unknown. Accept today's deliveries. Capture today's local system date once per verification and supply it to the LLM. Unsupported or invalid date evidence still becomes Unknown.
+- Preserve bounded lexical candidate selection and explicitly document that newest-first ranking applies only to verified candidates. Do not promote candidates based on unverified dates; warn about possible omitted recent sessions when the candidate limit is reached.
 
 ## Configuration and Grove integration
 
