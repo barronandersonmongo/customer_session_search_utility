@@ -18,6 +18,8 @@ Start the README with functional details: what the utility is, why it exists, an
 
 ## Purpose and requirements
 
+Exclude dates/references older than six calendar months, inclusively retaining the cutoff day; clamp month subtraction to valid calendar days. Before LLM selection, derive age references from dated session-folder names or leading dates in loose-note filenames, then customer/year January 1. Drop old/future metadata references before scoring and outbound context. Keep undated candidates for LLM verification and enforce the same window on final validated dates/year references. Metadata filtering is not proof of delivery; do not use file modification times. Preserve the fixed root and no runtime date/filter bypass. Local-only mode shows these metadata references; mark year-only dates with `*`.
+
 The program is named `bfind` (Barry Find). Use lowercase `bfind` for the command, CMake target, help text, and usage examples. The existing GitHub repository name remains unchanged.
 
 Build a C++ command-line utility that helps the user find relevant, recent customer sessions and reuse prior notes, slides, and other materials.
@@ -39,7 +41,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Offer to open the selected result folder in Dolphin. Ask for the result number, use position 1 when Enter is pressed, and support quitting without opening a folder.
 - Do not persist or cache search results or extracted note content. Keep intermediate search data in memory.
 - Optimize local work and LLM use by bounding candidate counts, excerpt sizes, and response length.
-- Use a labeled January 1 reference when only a grounded year is known; otherwise report missing dates as Unknown. Do not substitute file modification times for delivery dates.
+- Use an asterisk-marked January 1 reference when only a grounded year is known; otherwise report missing dates as Unknown. Do not substitute file modification times for delivery dates.
 - Exclude results whose evidenced, valid delivery date is after today; do not convert a confirmed future delivery to Unknown. Accept today's deliveries. Capture today's local system date once per verification and supply it to the LLM. Unsupported or invalid full-date evidence becomes a year reference when a grounded year is available, otherwise Unknown.
 - Preserve bounded lexical candidate selection and explicitly document that newest-first ranking applies only to verified candidates. Do not promote candidates based on unverified dates; warn about possible omitted recent sessions when the candidate limit is reached.
 - Default to 40 candidates (maximum 40). Filter common English stopwords, falling back to all terms for all-stopword queries; use these filtered distinct terms for retrieval and the coverage cap. Score terms by retrieved-folder rarity with integer weights, retain the original-query phrase bonus and capped hit bonus, and use ascending path order for deterministic score ties. Never use folder-name dates as delivery evidence for shortlist ordering.
@@ -72,7 +74,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Preserve bounded retrieval and request sizes. Keep the README's limit values and configuration precedence accurate when changing them.
 - Use ripgrep `--sort path` for repeatable file order and output-cap selection on unchanged trees. Do not claim timeout-based selection is deterministic.
 - Per the user's notes-scope decision, pass `--no-ignore` so ordinary ignored notes are searchable, while retaining default hidden-file, binary-file, and symlink exclusions. Do not add `--hidden`, binary searching, or document extraction without a user decision.
-- Validate result IDs against local candidates, reject duplicate IDs and incomplete completions, and require a valid calendar date supported by a matching source quote. When no validated delivery day exists, use January 1 of a grounded year (exact customer/year folder or quoted year-only model output), marked `(year reference)` in display. A full validated date takes precedence. Compare the ISO reference in ranking and apply future-date exclusion to it. With no grounded year, use Unknown. Local-only mode may derive folder-year references without an LLM request.
+- Validate result IDs against local candidates, reject duplicate IDs and incomplete completions, and require a valid calendar date supported by a matching source quote. When no validated delivery day exists, use January 1 of a grounded year (exact customer/year folder or quoted year-only model output), marked `*` in display. A full validated date takes precedence. Compare the ISO reference in ranking and apply future-date exclusion to it. With no grounded year, use Unknown. Local-only mode may derive folder-year references without an LLM request.
 - Tolerate absent/null/non-string optional text fields as Unknown or empty evidence. Skip items with oversized subject strings with one stderr count; fail if all items are oversized. Non-object items and invalid ID/relevance/duplicates remain fatal. Preserve successful empty results when all usable items are excluded future deliveries.
 - Dolphin launches independently of the CLI. Do not wait for its GUI lifetime or kill it on a request timeout. Prompt only when both stdin and stdout are terminals, unless `--no-open` suppresses it. Piped or redirected stdout must not receive prompts or wait for selections.
 - Before forking Dolphin, require a nonempty DISPLAY or WAYLAND_DISPLAY and otherwise fail clearly without launching. Do not claim those variables guarantee a working graphical session. Automated Dolphin tests must use synthetic display values and mocks, never a real window.
@@ -87,3 +89,5 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Documentation-only changes require consistency and formatting review, not live API calls.
 
 - Keep the synthetic integration fixture executable separate and non-installed, with a fixed compile-time build-directory root and no runtime root override. Production `bfind` must never accept an alternate root via CLI, config, environment, or cwd. Do not read or modify the real `.env` to migrate this setting.
+
+- Integration fixtures use a fixed compile-time epoch and synthetic recent dates to make age tests deterministic, including timezone checks. Production uses the real system clock and exposes no runtime date override. Native date tests cover month-end and leap-year clamping.

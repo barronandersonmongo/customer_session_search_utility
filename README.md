@@ -13,7 +13,7 @@ Delivering similar content to multiple customers leaves useful material scattere
 - See the newest on-topic deliveries first, followed by peripheral material. Future-dated deliveries are excluded.
 - Open a result folder in Dolphin by entering its number; Enter selects result 1.
 
-When the delivery day is unknown but a year is known, January 1 is used for ranking and shown as `YYYY-01-01 (year reference)`. If neither is known, the date appears as `Unknown`. Example output:
+When the delivery day is unknown but a year is known, January 1 is used for ranking and shown as `YYYY-01-01*`. If neither is known, the date appears as `Unknown`. Example output:
 
 ```text
 1. Acme | 2026-10-22 | Vector Search Workshop
@@ -40,6 +40,8 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 
 ### Technical decisions and limits
 
+Entries with resolved dates or date references older than six calendar months are excluded. The cutoff is inclusive and uses today in the system timezone; subtracting six months clamps to the last valid day of the destination month. Before scoring/shortlisting or calling the LLM, candidates are filtered using an ISO date at the start of the session-folder name or loose-note filename, then January 1 of the customer/year folder when only that year is known. Future references are also excluded. These metadata dates are references, not proof of delivery; an old reference can exclude a folder even if its contents describe newer work. Candidates with no usable metadata date/year remain eligible for LLM verification, and final validated dates/year references are checked against the same window. No file modification times are used.
+
 - C++17 on Linux, CMake, and Boost.JSON for parsing and serialization. Boost.JSON's bundled implementation is compiled into the executable; no separate Boost.JSON binary library is linked.
 - CMake enforces Boost 1.75.0 or newer as the compatibility minimum, not an exact dependency lock. All application and test targets use `-fstack-protector-strong` when supported. Optimized GNU/Clang glibc builds enable `_FORTIFY_SOURCE` at least 2 before libc headers, preserving stronger supplied settings; unoptimized builds do not force fortification.
 - Curl handles HTTPS through an argument-safe child process. The key and request body travel through stdin, never command-line arguments or temporary request files. Redirects are not followed, and curl's user configuration is disabled.
@@ -64,7 +66,7 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 
 ### Limits of verification
 
-Year-only references are conservative sorting placeholders, not confirmed January 1 deliveries. Local-only mode can show a reference from the folder year without an LLM call; the customer is derived from the first folder below Customers, while the actual delivery day and relevance remain unverified.
+Year-only references are conservative sorting placeholders, not confirmed January 1 deliveries. Local-only mode shows metadata dates from session names or loose-note filenames, falling back to January 1 of the folder year; `*` marks a year-only reference. Without an LLM call, the customer is derived from the first folder below Customers, while the actual delivery day and relevance remain unverified.
 
 Folder containment is checked before launching Dolphin, but a concurrent folder/symlink swap between validation and launch remains possible. The launcher is not an atomic filesystem sandbox.
 

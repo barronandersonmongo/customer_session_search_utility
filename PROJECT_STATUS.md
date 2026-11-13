@@ -6,6 +6,8 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
+- Replaced the year-reference suffix with `*` and added a fixed six-calendar-month eligibility window, pruning locally resolved old/future candidates before scoring and LLM calls and enforcing the same window after verification.
+
 - `/home/barry/.local/bin/bfind` now links to the tracked `bin/bfind` launcher, which executes `build/bfind` with the absolute project `.env` path. Verified shell syntax and traced --help from /tmp to confirm the argument without reading the config. No credentials are embedded or sourced; no note search or API request was run.
 - Hardened terminal presentation, restricted curl inheritance with a TLS 1.2 minimum while preserving company proxy/CA settings, and enabled supported build hardening with an enforced minimum Boost version. No usage audit or persistent usage log was introduced.
 
@@ -28,9 +30,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 104 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 110 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Six-month eligibility and asterisk references: configure/build and all four suites passed (109 integration passes, one root-only ownership skip, plus native date/Unicode/process checks). Pre-LLM tests assert old metadata/content markers are absent from outbound context, all-old year references skip the API, leading legacy filename dates override coarse year references, and the exact cutoff day is retained. Final date/year checks remove older results discovered by the model. Calendar tests cover month ends, leap years, and year rollover. Synthetic integration dates now use an immutable compile-time fixture epoch with timezone coverage; production retains the real clock and no runtime date/filter bypass. Year-only dates display `*`. No real `.env`, real customer-note contents, or live API calls; private notes updated locally and remain ignored.
 
 - Unknown-customer label: rebuilt both executables and passed three targeted integration tests covering the root-level fallback in local and verified modes, normal path-derived names, and missing optional model fields. Only the missing customer label changes to `Unknown Customer`; date/subject Unknown labels remain unchanged. No live API or real `.env` access. Private notes updated locally and remain ignored.
 

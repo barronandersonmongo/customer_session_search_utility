@@ -1,6 +1,7 @@
 #include <boost/json/src.hpp>
 #include "process.hpp"
 #include "terminal.hpp"
+#include "dates.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -294,12 +295,22 @@ struct Candidate {
     int excerpt_term_coverage = 0, query_term_count = 0;
     std::vector<size_t> retrieval_terms;
     std::string excerpt;
+    std::string reference_date;
+    bool reference_year_only = false;
 };
+struct DateWindow { std::string today, oldest; };
+std::string folder_year_start(const fs::path& folder, const fs::path& root);
+std::pair<std::string, bool> metadata_reference(const Candidate& candidate, const fs::path& root) {
+    auto date = leading_date(candidate.folder.filename().string());
+    if (date.empty() && candidate.identity.rfind("file:", 0) == 0)
+        date = leading_date(fs::path(candidate.identity.substr(5)).filename().string());
+    if (!date.empty()) return {date, false};
+    return {folder_year_start(candidate.folder, root), true};
+}
 bool inside(const fs::path& path, const fs::path& root) {
     auto relative = path.lexically_relative(root);
     return !relative.empty() && *relative.begin() != "..";
 }
-bool valid_date(const std::string& date);
 struct SessionLocation { fs::path folder; std::string identity; };
 SessionLocation session_location(const fs::path& file, const fs::path& root) {
     std::vector<fs::path> parts;
@@ -337,8 +348,8 @@ std::vector<std::string> terms(const std::string& query) {
     for (const auto& word : result) if (!stopwords.count(word)) filtered.push_back(word);
     return filtered.empty() ? result : filtered;
 }
-struct Retrieval { std::vector<Candidate> candidates; bool partial; };
-Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& progress) {
+struct Retrieval { std::vector<Candidate> candidates; bool partial; size_t excluded_dates = 0; };
+Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& progress, const DateWindow& window) {
     auto words = terms(opt.query);
     progress.log("Searching fixed customer folder with ripgrep: " + std::to_string(words.size()) +
                  " distinct search terms; " + std::to_string(opt.context) + " context lines; timeout 30s; output cap 16 MiB.");
@@ -403,6 +414,18 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& pro
     if (skipped_paths) std::cerr << "Skipped " << skipped_paths << " inaccessible file path(s); search coverage is partial.\n";
     progress.log("Retrieval findings: " + std::to_string(matches) + " match records from " +
                  std::to_string(canonical_paths.size()) + " file paths; " + std::to_string(skipped_paths) + " inaccessible paths.");
+    size_t too_old = 0, future_dates = 0;
+    for (auto it = grouped.begin(); it != grouped.end();) {
+        auto reference = metadata_reference(it->second, root);
+        it->second.reference_date = reference.first;
+        it->second.reference_year_only = reference.second && !reference.first.empty();
+        if (!reference.first.empty() && (reference.first < window.oldest || reference.first > window.today)) {
+            if (reference.first < window.oldest) ++too_old; else ++future_dates;
+            it = grouped.erase(it);
+        } else ++it;
+    }
+    progress.log("Date prefilter: cutoff " + window.oldest + " inclusive; " + std::to_string(too_old) +
+                 " too old and " + std::to_string(future_dates) + " future candidates removed before LLM selection.");
     std::vector<Candidate> candidates;
     std::vector<size_t> folder_frequency(words.size(), 0);
     for (auto& item : grouped) {
@@ -463,15 +486,7 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& pro
     }
     progress.log("Selected " + std::to_string(candidates.size()) + " candidates with " + std::to_string(excerpt_bytes) +
                  " excerpt bytes; coverage " + ((found.limited || found.timed_out || skipped_paths) ? "partial."s : "within configured retrieval limits."s));
-    return {std::move(candidates), found.limited || found.timed_out || skipped_paths != 0};
-}
-bool valid_date(const std::string& s) {
-    static const std::regex iso_date("[0-9]{4}-[0-9]{2}-[0-9]{2}");
-    if (!std::regex_match(s, iso_date)) return false;
-    int y = std::stoi(s.substr(0,4)), m = std::stoi(s.substr(5,2)), d = std::stoi(s.substr(8,2));
-    if (y < 1900 || m < 1 || m > 12) return false;
-    const int days[]{31,28,31,30,31,30,31,31,30,31,30,31};
-    return d >= 1 && d <= days[m-1] + (m == 2 && y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
+    return {std::move(candidates), found.limited || found.timed_out || skipped_paths != 0, too_old + future_dates};
 }
 bool date_supported(const std::string& date, const std::string& evidence) {
     if (!valid_date(date)) return false;
@@ -520,7 +535,11 @@ int cap_relevance(int relevance, const Candidate& candidate) {
 // Keep the on-topic threshold in one place; peripheral results remain visible below it.
 bool on_topic(const Result& result) { return result.relevance >= 2; }
 std::string local_today() {
+#ifdef BFIND_TEST_EPOCH
+    std::time_t now = static_cast<std::time_t>(BFIND_TEST_EPOCH);
+#else
     std::time_t now = std::time(nullptr);
+#endif
     std::tm local{};
     char date[11];
     if (now == static_cast<std::time_t>(-1) || !localtime_r(&now, &local) ||
@@ -529,7 +548,8 @@ std::string local_today() {
     return date;
 }
 std::vector<Result> verify(const Options& opt, const std::vector<Candidate>& candidates,
-                           const std::map<std::string, std::string>& cfg, const Progress& progress, const fs::path& root) {
+                           const std::map<std::string, std::string>& cfg, const Progress& progress, const fs::path& root,
+                           const DateWindow& window) {
     progress.log("Verifying " + std::to_string(candidates.size()) + " candidates with the LLM.");
     json::array items;
     for (size_t i = 0; i < candidates.size(); ++i)
@@ -548,17 +568,18 @@ The application derives the customer from the first folder under the fixed Custo
 Extract a concise session subject from evidence; use "Unknown" if missing.
 The date must be the delivery date, not a preparation, planned future session, document update, or unrelated date.
 Exclude sessions delivered after the supplied as_of_date (today in the user's system timezone).
+Exclude sessions with dates or January 1 year references earlier than oldest_delivery_date.
 Use YYYY-MM-DD with a verbatim supporting date_evidence quote. If only the delivery year is known,
 return YYYY with a supporting quote; the application will label January 1 as a year-only reference.
 Otherwise use "Unknown" and empty date_evidence.
 Do not infer a date from file modification time. Do not invent information or return paths.
 Order does not matter; the application ranks results.)";
-    const std::string today = local_today();
-    json::object context{{"query", opt.query}, {"as_of_date", today}, {"candidates", items}};
+    const std::string& today = window.today;
+    json::object context{{"query", opt.query}, {"as_of_date", today}, {"oldest_delivery_date", window.oldest}, {"candidates", items}};
     auto content = api(cfg, json::array{json::object{{"role","system"},{"content",instructions}},
                                       json::object{{"role","user"},{"content",json::serialize(context)}}}, kSearchCompletionTokens, true, progress);
     std::vector<Result> results; std::set<size_t> ids;
-    size_t oversized = 0, returned = 0, future = 0, unknown = 0, capped = 0, year_references = 0;
+    size_t oversized = 0, returned = 0, future = 0, unknown = 0, capped = 0, year_references = 0, too_old = 0;
     progress.log("Validating model IDs, fields, dates, evidence, and relevance coverage.");
     try {
         auto parsed = json::parse(content);
@@ -592,6 +613,7 @@ Order does not matter; the application ranks results.)";
                 if (!reference.empty()) { date = reference; year_only = true; }
             }
             if (date != "Unknown" && date > today) { ++future; continue; }
+            if (date != "Unknown" && date < window.oldest) { ++too_old; continue; }
             if (date == "Unknown") ++unknown;
             if (year_only) ++year_references;
             if (cap_relevance(static_cast<int>(relevance), candidates[id]) != relevance) ++capped;
@@ -604,7 +626,8 @@ Order does not matter; the application ranks results.)";
     } catch (...) { throw std::runtime_error("LLM returned invalid session data; no results were accepted."); }
     progress.log("Validation findings: " + std::to_string(returned) + " returned; " + std::to_string(results.size()) +
                  " accepted; " + std::to_string(future) + " future deliveries excluded; " + std::to_string(oversized) +
-                 " oversized skipped; " + std::to_string(unknown) + " unknown dates; " + std::to_string(year_references) +
+                 " oversized skipped; " + std::to_string(too_old) + " too-old deliveries excluded; " + std::to_string(unknown) +
+                 " unknown dates; " + std::to_string(year_references) +
                  " year-only references; " + std::to_string(capped) + " relevance ratings capped.");
     std::sort(results.begin(), results.end(), [&](const Result& a, const Result& b) {
         if (on_topic(a) != on_topic(b)) return on_topic(a);
@@ -655,10 +678,16 @@ int main(int argc, char** argv) {
         progress.log("Checking fixed customer folder availability.");
         if (!fs::is_directory(kSearchRoot)) throw std::runtime_error("The fixed customer notes folder is not an accessible directory.");
         const auto root = fs::canonical(kSearchRoot);
-        auto retrieved = retrieve(opt, root, progress);
+        const std::string today = local_today();
+        const DateWindow window{today, six_month_cutoff(today)};
+        auto retrieved = retrieve(opt, root, progress, window);
         auto& candidates = retrieved.candidates;
         if (candidates.empty()) {
             progress.log("No candidates available; skipping the LLM and folder selection.");
+            if (retrieved.excluded_dates) {
+                std::cout << "No relevant sessions within the last six months" << (retrieved.partial ? "; search coverage is incomplete.\n" : ".\n");
+                return 0;
+            }
             std::cout << (retrieved.partial ? "No local matches found in partial search results; coverage is incomplete.\n" : "No local matches found.\n");
             return 0;
         }
@@ -666,13 +695,12 @@ int main(int argc, char** argv) {
         if (opt.local) {
             progress.log("Local-only mode: skipping LLM verification.");
             std::cerr << "Local matches only; customer comes from the folder path; delivery date and relevance are unverified.\n";
-            const std::string today = local_today();
             for (size_t i = 0; i < candidates.size(); ++i) {
-                const std::string reference = folder_year_start(candidates[i].folder, root);
-                if (!reference.empty() && reference > today) continue;
-                results.push_back({i,customer_from_folder(candidates[i].folder, root),reference.empty() ? "Unknown" : reference,"Unverified local topic match",1,!reference.empty()});
+                const std::string& reference = candidates[i].reference_date;
+                results.push_back({i,customer_from_folder(candidates[i].folder, root),reference.empty() ? "Unknown" : reference,
+                                   "Unverified local topic match",1,candidates[i].reference_year_only});
             }
-        } else results = verify(opt, candidates, cfg, progress, root);
+        } else results = verify(opt, candidates, cfg, progress, root, window);
         progress.log("Displaying up to " + std::to_string(opt.results) + " of " + std::to_string(results.size()) + " results.");
         if (results.size() > static_cast<size_t>(opt.results)) results.resize(opt.results);
         if (results.empty()) {
@@ -681,7 +709,7 @@ int main(int argc, char** argv) {
         }
         for (size_t i = 0; i < results.size(); ++i) {
             const auto& r = results[i];
-            std::cout << i + 1 << ". " << r.customer << " | " << r.date << (r.year_only ? " (year reference)" : "") << " | " << r.subject << '\n'
+            std::cout << i + 1 << ". " << r.customer << " | " << r.date << (r.year_only ? "*" : "") << " | " << r.subject << '\n'
                       << "   " << clean(candidates[r.id].folder.string()) << "\n\n";
         }
         if (!opt.local)

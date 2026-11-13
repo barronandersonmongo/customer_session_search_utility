@@ -19,6 +19,9 @@ import unittest
 BINARY = str(Path(sys.argv.pop(1)).resolve())
 FIXTURE_ROOT = Path(sys.argv.pop(1)).resolve()
 PRODUCTION_BINARY = str(Path(sys.argv.pop(1)).resolve())
+TEST_EPOCH = int(sys.argv.pop(1))
+def now_utc():
+    return datetime.datetime.fromtimestamp(TEST_EPOCH, datetime.timezone.utc)
 LOCKED_ROOT = '/home/barry/GoogleDrive/Builder Relations/Customers/'
 MOCK_CURL = r'''
 import datetime, json, os, sys, time
@@ -56,8 +59,10 @@ if request['messages'][0]['content'] == 'Reply with exactly OK.':
 else:
     assert request['max_completion_tokens'] == 16384
     context = json.loads(request['messages'][1]['content'])
-    assert context['as_of_date'] == datetime.date.today().isoformat()
+    assert context['as_of_date'] == datetime.datetime.fromtimestamp(TEST_EPOCH).date().isoformat()
     candidates = context['candidates']
+    for forbidden in json.loads(state.get('FORBIDDEN_CONTEXT', '[]')):
+        assert forbidden not in json.dumps(context)
     assert len(candidates) <= int(state.get('EXPECTED_CANDIDATES', '40'))
     if 'EXPECTED_EXACT_CANDIDATES' in state:
         assert len(candidates) == int(state['EXPECTED_EXACT_CANDIDATES'])
@@ -71,7 +76,7 @@ else:
     results = []
     for c in candidates:
         folder = c['folder']
-        date = '2026-10-22' if Path(folder).name in ('Recent', 'Related') else '2025-09-14'
+        date = '2025-03-01' if Path(folder).name in ('Recent', 'Related') else '2025-01-14'
         results.append(dict(id=c['id'], customer=Path(folder).name, date=date,
                             date_evidence=date, subject='Vector Search Workshop',
                             relevance=2 if 'Related' in folder else 3))
@@ -93,7 +98,7 @@ else:
     if mode == 'no-evidence': results[0]['date_evidence'] = 'not supplied anywhere'
     if mode == 'wrong-evidence': results[0]['date_evidence'] = 'Vector Search'
     if mode == 'named-date':
-        results[0]['date'] = '2026-10-22'; results[0]['date_evidence'] = 'October 22, 2026'
+        results[0]['date'] = '2025-03-01'; results[0]['date_evidence'] = 'March 1, 2025'
     if mode == 'empty': results = []
     content = json.dumps(dict(results=results))
     if mode == 'malformed': content = 'not JSON'
@@ -118,7 +123,7 @@ class Integration(unittest.TestCase):
         self.bin.mkdir()
         curl = self.bin / 'curl'
         self.curl_state = self.base / 'curl-state.json'
-        curl.write_text('#!' + sys.executable + '\nTEST_STATE_FILE = ' + repr(str(self.curl_state)) + '\n' + MOCK_CURL)
+        curl.write_text('#!' + sys.executable + '\nTEST_STATE_FILE = ' + repr(str(self.curl_state)) + '\nTEST_EPOCH = ' + repr(TEST_EPOCH) + '\n' + MOCK_CURL)
         curl.chmod(0o755)
         dolphin = self.bin / 'dolphin'
         dolphin.write_text('#!' + sys.executable + '\nimport json, os, sys\nfrom pathlib import Path\nPath(os.environ["MOCK_OPENED"]).write_text(json.dumps(sys.argv[1:]))\n')
@@ -135,9 +140,9 @@ class Integration(unittest.TestCase):
                                'LLM_MODEL=gpt-6-astra\n')
         self.config.chmod(0o600)
         self.write_curl_state(self.env)
-        self.note('Old', 'Customer: Old\nDelivered: 2025-09-14\nSubject: Vector Search Workshop\n')
-        self.note('Recent', 'Customer: Recent\nDelivered: 2026-10-22\nSubject: Vector Search Workshop\n')
-        self.note('Related', 'Delivered: 2026-10-22\nSubstantially related Vector Search session materials.\n')
+        self.note('Old', 'Customer: Old\nDelivered: 2025-01-14\nSubject: Vector Search Workshop\n')
+        self.note('Recent', 'Customer: Recent\nDelivered: 2025-03-01\nSubject: Vector Search Workshop\n')
+        self.note('Related', 'Delivered: 2025-03-01\nSubstantially related Vector Search session materials.\n')
 
     def note(self, folder, content, name='notes.txt'):
         p = self.root / folder
@@ -147,7 +152,7 @@ class Integration(unittest.TestCase):
 
     def write_curl_state(self, env):
         names = ('MOCK_CALLED', 'TEST_MODE', 'TEST_RESULTS', 'TEST_CURL_EXIT', 'EXPECTED_CANDIDATES',
-                 'EXPECTED_EXACT_CANDIDATES', 'EXPECTED_EXCERPT_TEXT', 'LEGACY_MARKERS', 'EXPECT_CURL_ENV')
+                 'EXPECTED_EXACT_CANDIDATES', 'EXPECTED_EXCERPT_TEXT', 'LEGACY_MARKERS', 'EXPECT_CURL_ENV', 'FORBIDDEN_CONTEXT')
         self.curl_state.write_text(json.dumps({key: env[key] for key in names if key in env}))
 
     def run_app(self, *args, mode='', success=True, timeout=15):
@@ -160,11 +165,11 @@ class Integration(unittest.TestCase):
         return result
 
     def test_ranking_and_folder_deduplication(self):
-        self.note('Recent', 'Vector Search Workshop\nDelivered: 2026-10-22\n', 'duplicate.txt')
+        self.note('Recent', 'Vector Search Workshop\nDelivered: 2025-03-01\n', 'duplicate.txt')
         result = self.run_app('vector search')
-        self.assertIn('1. Recent | 2026-10-22', result.stdout)
-        self.assertIn('2. Related | 2026-10-22', result.stdout)
-        self.assertIn('3. Old | 2025-09-14', result.stdout)
+        self.assertIn('1. Recent | 2025-03-01', result.stdout)
+        self.assertIn('2. Related | 2025-03-01', result.stdout)
+        self.assertIn('3. Old | 2025-01-14', result.stdout)
         self.assertEqual(result.stdout.count(str(self.root / 'Recent')), 1)
         self.assertNotIn('Open result', result.stdout)
 
@@ -265,14 +270,14 @@ class Integration(unittest.TestCase):
             self.assertEqual(self.ranked_customers(mode=mode), expected)
 
     def test_future_delivery_is_excluded_today_is_accepted(self):
-        today = datetime.datetime.now(datetime.timezone.utc).date()
+        today = now_utc().date()
         tomorrow = today + datetime.timedelta(days=1)
         self.ranking_fixture([('Future', tomorrow.isoformat(), 3, 1), ('Today', today.isoformat(), 2, 1),
                               ('Past', '2025-01-01', 3, 1)])
         self.assertEqual(self.ranked_customers(), ['Today', 'Past'])
 
     def test_all_future_sessions_produce_no_verified_results(self):
-        future = datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1)
+        future = now_utc().date() + datetime.timedelta(days=1)
         self.ranking_fixture([('FutureOnly', future.isoformat(), 3, 1)])
         self.assertIn('No relevant sessions', self.run_app('Vector Search').stdout)
 
@@ -280,7 +285,7 @@ class Integration(unittest.TestCase):
         for tz, offset in (('UTC-14', 14), ('UTC+12', -12)):
             with self.subTest(tz=tz):
                 self.env['TZ'] = tz
-                today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=offset))).date()
+                today = datetime.datetime.fromtimestamp(TEST_EPOCH, datetime.timezone(datetime.timedelta(hours=offset))).date()
                 self.ranking_fixture([('LocalToday', today.isoformat(), 3, 1),
                                       ('LocalTomorrow', (today + datetime.timedelta(days=1)).isoformat(), 3, 1)])
                 self.assertEqual(self.ranked_customers(), ['LocalToday'])
@@ -308,9 +313,9 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.base / 'called').exists())
 
     def test_model_notice_is_stderr_only_and_stdout_is_unchanged(self):
-        self.ranking_fixture([('Recent', '2026-10-22', 3, 1)])
+        self.ranking_fixture([('Recent', '2025-03-01', 3, 1)])
         result = self.run_app('Vector Search')
-        self.assertEqual(result.stdout, '1. Recent | 2026-10-22 | Vector Search Workshop\n   ' +
+        self.assertEqual(result.stdout, '1. Recent | 2025-03-01 | Vector Search Workshop\n   ' +
                          str(self.root / 'Recent') + '\n\n')
         self.assertEqual(result.stderr, 'Model-generated results: check customer, date, and subject in the folder before relying on them.\n')
 
@@ -358,7 +363,7 @@ class Integration(unittest.TestCase):
             p.communicate()
 
     def test_verbose_validation_reports_future_and_unknown_dates(self):
-        future = datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1)
+        future = now_utc().date() + datetime.timedelta(days=1)
         self.ranking_fixture([('Future', future.isoformat(), 3, 1), ('Undated', 'Unknown', 2, 1)])
         result = self.run_app('--verbose', 'Vector Search')
         self.assertIn('1 future deliveries excluded', result.stderr)
@@ -429,9 +434,9 @@ class Integration(unittest.TestCase):
 
     def test_named_date(self):
         self.ranking_fixture([])
-        self.note('Recent', 'Vector Search\nDelivered October 22, 2026\n')
+        self.note('Recent', 'Vector Search\nDelivered March 1, 2025\n')
         result = self.run_app('Vector Search', mode='named-date')
-        self.assertIn('| 2026-10-22 |', result.stdout)
+        self.assertIn('| 2025-03-01 |', result.stdout)
 
     def test_candidate_and_excerpt_limits(self):
         self.env['EXPECTED_CANDIDATES'] = '1'
@@ -461,7 +466,7 @@ class Integration(unittest.TestCase):
 
     def test_default_shortlist_contains_forty_candidates(self):
         self.ranking_fixture([])
-        for i in range(41): self.note('Session' + str(i), 'Vector Search\nDelivered: 2025-09-14\n')
+        for i in range(41): self.note('Session' + str(i), 'Vector Search\nDelivered: 2025-01-14\n')
         self.env['EXPECTED_EXACT_CANDIDATES'] = '40'
         result = self.run_app('Vector Search')
         self.assertIn('top 40 matching candidates', result.stderr)
@@ -472,12 +477,12 @@ class Integration(unittest.TestCase):
 
     def session_tree(self):
         self.ranking_fixture([])
-        session = self.root / 'Acme' / '2025' / '2025-09-14 - Vector Search'
+        session = self.root / 'Acme' / '2025' / '2025-01-14 - Vector Search'
         for subdir, marker in (('notes', 'Notebook material'), ('slides', 'Slide text material')):
             folder = session / subdir
             folder.mkdir(parents=True)
-            (folder / 'notes.txt').write_text('Vector Search\nDelivered: 2025-09-14\n' + marker + '\n')
-        (session / 'overview.md').write_text('Vector Search overview\nDelivered: 2025-09-14\n')
+            (folder / 'notes.txt').write_text('Vector Search\nDelivered: 2025-01-14\n' + marker + '\n')
+        (session / 'overview.md').write_text('Vector Search overview\nDelivered: 2025-01-14\n')
         return session
 
     def test_customer_date_documents_group_into_one_session(self):
@@ -492,9 +497,9 @@ class Integration(unittest.TestCase):
     def test_customer_is_first_folder_in_local_and_verified_results(self):
         self.ranking_fixture([])
         customer = 'Warner Bros.'
-        session = self.root / customer / '2025' / '2025-09-14 - Vector Search'
+        session = self.root / customer / '2025' / '2025-01-14 - Vector Search'
         (session / 'notes').mkdir(parents=True)
-        (session / 'notes' / 'notes.txt').write_text('Vector Search\nDelivered: 2025-09-14\n')
+        (session / 'notes' / 'notes.txt').write_text('Vector Search\nDelivered: 2025-01-14\n')
         self.env['TEST_RESULTS'] = json.dumps({session.name: dict(customer='Wrong model customer' * 100)})
         for args in ((), ('--local-only',)):
             with self.subTest(args=args):
@@ -511,9 +516,9 @@ class Integration(unittest.TestCase):
 
     def test_separate_session_dates_stay_separate(self):
         first = self.session_tree()
-        second = first.parent / '2025-09-15'
+        second = first.parent / '2025-02-15'
         second.mkdir()
-        (second / 'notes.txt').write_text('Vector Search\nDelivered: 2025-09-15\n')
+        (second / 'notes.txt').write_text('Vector Search\nDelivered: 2025-02-15\n')
         self.env['EXPECTED_EXACT_CANDIDATES'] = '2'
         result = self.run_app('Vector Search')
         self.assertEqual(result.stdout.count('\n   '), 2)
@@ -539,14 +544,14 @@ class Integration(unittest.TestCase):
         (year / 'notes.txt').write_text('Vector Search\nNo precise delivery date recorded.\n')
         self.env['TEST_RESULTS'] = json.dumps({'2025': dict(date='Unknown', date_evidence='')})
         result = self.run_app('--verbose', 'Vector Search')
-        self.assertIn('2025-01-01 (year reference)', result.stdout)
+        self.assertIn('2025-01-01*', result.stdout)
         self.assertIn('1 year-only references', result.stderr)
 
     def test_evidenced_year_only_in_notes_uses_year_reference(self):
         self.ranking_fixture([])
-        self.note('YearOnly', 'Vector Search\nDelivered during 2024.\n')
-        self.env['TEST_RESULTS'] = json.dumps({'YearOnly': dict(date='2024', date_evidence='Delivered during 2024.')})
-        self.assertIn('2024-01-01 (year reference)', self.run_app('Vector Search').stdout)
+        self.note('YearOnly', 'Vector Search\nDelivered during 2025.\n')
+        self.env['TEST_RESULTS'] = json.dumps({'YearOnly': dict(date='2025', date_evidence='Delivered during 2025.')})
+        self.assertIn('2025-01-01*', self.run_app('Vector Search').stdout)
 
     def test_unsubstantiated_year_is_not_used(self):
         self.ranking_fixture([])
@@ -554,7 +559,7 @@ class Integration(unittest.TestCase):
         self.env['TEST_RESULTS'] = json.dumps({'YearOnly': dict(date='2024', date_evidence='Code 20240.')})
         result = self.run_app('Vector Search')
         self.assertIn('| Unknown |', result.stdout)
-        self.assertNotIn('(year reference)', result.stdout)
+        self.assertNotIn('*', result.stdout)
 
     def test_year_reference_sorts_by_january_first(self):
         self.ranking_fixture([])
@@ -576,11 +581,11 @@ class Integration(unittest.TestCase):
         self.env['TEST_RESULTS'] = json.dumps({'2025': dict(date='2024-10-22', date_evidence='2024-10-22')})
         result = self.run_app('Vector Search')
         self.assertIn('| 2024-10-22 |', result.stdout)
-        self.assertNotIn('(year reference)', result.stdout)
+        self.assertNotIn('*', result.stdout)
 
     def test_future_year_reference_is_excluded(self):
         self.ranking_fixture([])
-        future = str(datetime.datetime.now(datetime.timezone.utc).year + 1)
+        future = str(now_utc().year + 1)
         year = self.root / 'Acme' / future
         year.mkdir(parents=True)
         (year / 'notes.txt').write_text('Vector Search\n')
@@ -595,12 +600,71 @@ class Integration(unittest.TestCase):
         (year / 'notes.txt').write_text('Vector Search\n')
         self.config.write_text('')
         result = self.run_app('--local-only', 'Vector Search')
-        self.assertIn('2025-01-01 (year reference)', result.stdout)
+        self.assertIn('2025-01-01*', result.stdout)
         self.assertFalse((self.base / 'called').exists())
+
+    def dated_session(self, customer, date, marker=''):
+        session = self.root / customer / date[:4] / (date + ' - Vector Search')
+        session.mkdir(parents=True)
+        (session / 'notes.txt').write_text('Vector Search\nDelivered: ' + date + '\n' + marker + '\n')
+        return session
+
+    def test_old_metadata_is_removed_before_llm_request(self):
+        self.ranking_fixture([])
+        self.dated_session('OldCustomer', '2024-09-14', 'OLD_CONTEXT_MUST_NOT_LEAVE')
+        self.dated_session('RecentCustomer', '2025-01-14')
+        self.env['EXPECTED_EXACT_CANDIDATES'] = '1'
+        self.env['FORBIDDEN_CONTEXT'] = json.dumps(['OldCustomer', 'OLD_CONTEXT_MUST_NOT_LEAVE'])
+        result = self.run_app('--verbose', 'Vector Search')
+        self.assertIn('1 too old', result.stderr)
+        self.assertIn('RecentCustomer |', result.stdout)
+        self.assertNotIn('OldCustomer', result.stdout)
+
+    def test_all_old_year_references_skip_llm_entirely(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2024'
+        year.mkdir(parents=True)
+        (year / 'notes.txt').write_text('Vector Search\n')
+        self.config.write_text('')
+        result = self.run_app('Vector Search')
+        self.assertIn('No relevant sessions within the last six months', result.stdout)
+        self.assertFalse((self.base / 'called').exists())
+
+    def test_dated_legacy_filename_precedes_year_reference_for_age(self):
+        self.ranking_fixture([])
+        year = self.root / 'Acme' / '2024'
+        year.mkdir(parents=True)
+        (year / '2024-12-31 - Notes.txt').write_text('Vector Search\nDelivered: 2024-12-31\n')
+        self.env['TEST_RESULTS'] = json.dumps({'2024': dict(date='2024-12-31', date_evidence='2024-12-31')})
+        for args in ((), ('--local-only',)):
+            result = self.run_app(*args, 'Vector Search')
+            self.assertIn('| 2024-12-31 |', result.stdout)
+
+    def test_exact_six_month_cutoff_is_included(self):
+        self.ranking_fixture([])
+        session = self.dated_session('Boundary', '2024-09-15')
+        self.env['TEST_RESULTS'] = json.dumps({session.name: dict(date='2024-09-15', date_evidence='2024-09-15')})
+        result = self.run_app('Vector Search')
+        self.assertIn('| 2024-09-15 |', result.stdout)
+
+    def test_verified_old_date_is_rejected_after_recent_metadata(self):
+        self.ranking_fixture([])
+        session = self.dated_session('RecentFolder', '2025-01-14')
+        (session / 'notes.txt').write_text('Vector Search\nDelivered: 2024-09-14\n')
+        self.env['TEST_RESULTS'] = json.dumps({session.name: dict(date='2024-09-14', date_evidence='2024-09-14')})
+        result = self.run_app('--verbose', 'Vector Search')
+        self.assertIn('1 too-old deliveries excluded', result.stderr)
+        self.assertIn('No relevant sessions', result.stdout)
+
+    def test_old_model_year_reference_is_rejected(self):
+        self.ranking_fixture([])
+        self.note('NoYearFolder', 'Vector Search\nDelivered during 2024.\n')
+        self.env['TEST_RESULTS'] = json.dumps({'NoYearFolder': dict(date='2024', date_evidence='Delivered during 2024.')})
+        self.assertIn('No relevant sessions', self.run_app('Vector Search').stdout)
 
     def test_session_without_year_folder_still_groups_documents(self):
         self.ranking_fixture([])
-        folder = self.root / 'Acme' / '2025-09-14 - Workshop'
+        folder = self.root / 'Acme' / '2025-01-14 - Workshop'
         (folder / 'slides').mkdir(parents=True)
         (folder / 'notes.txt').write_text('Vector Search notes\n')
         (folder / 'slides' / 'text.md').write_text('Vector Search slide text\n')
@@ -877,7 +941,7 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.base / 'opened').exists())
 
     def test_utf8_excerpt_boundaries(self):
-        self.note('Unicode', 'Vector Search ' + 'é' * 900 + '\nDelivered: 2025-09-14\n')
+        self.note('Unicode', 'Vector Search ' + 'é' * 900 + '\nDelivered: 2025-01-14\n')
         self.run_app('Vector Search')
 
     def test_search_output_limit_is_explicit(self):
@@ -900,7 +964,7 @@ class Integration(unittest.TestCase):
 
     def mock_rg(self, paths, delay=0):
         events = [dict(type='match', data=dict(path=dict(text=str(path)), line_number=1,
-                  lines=dict(text='Vector Search\nDelivered: 2026-10-22\n'))) for path in paths]
+                  lines=dict(text='Vector Search\nDelivered: 2025-03-01\n'))) for path in paths]
         script = self.bin / 'rg'
         script.write_text('#!' + sys.executable + '\nimport json, time\n' +
                           'events = ' + repr(events) + '\n' +
