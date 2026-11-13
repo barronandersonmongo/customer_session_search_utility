@@ -111,7 +111,7 @@ class Integration(unittest.TestCase):
         self.env = os.environ.copy()
         for key in ('LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL', 'SEARCH_ROOT'):
             self.env.pop(key, None)
-        self.env.update(TZ='UTC', PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
+        self.env.update(TZ='UTC', DISPLAY=':synthetic', PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                         HOME=str(self.base / 'home'), XDG_CONFIG_HOME=str(self.base / 'xdg'),
                         MOCK_CALLED=str(self.base / 'called'), MOCK_OPENED=str(self.base / 'opened'))
         self.config = self.base / 'settings.env'
@@ -715,7 +715,7 @@ class Integration(unittest.TestCase):
         result = self.run_app('Vector Search', mode='empty')
         self.assertIn('partial candidate excerpts; coverage is incomplete', result.stdout)
 
-    def interact(self, answer):
+    def interact(self, answer, expect_code=0, expect_open=True):
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
         p = subprocess.Popen([BINARY, '--env', str(self.config), 'Vector Search'],
@@ -730,15 +730,21 @@ class Integration(unittest.TestCase):
                 except OSError: break
         self.assertIn(b'Open result [1], or q to quit:', output)
         os.write(master, answer)
-        self.assertEqual(p.wait(timeout=5), 0)
+        self.assertEqual(p.wait(timeout=5), expect_code)
+        while select.select([master], [], [], .05)[0]:
+            try: chunk = os.read(master, 8192)
+            except OSError: break
+            if not chunk: break
+            output += chunk
         opened = self.base / 'opened'
-        if answer != b'q\n':
+        if expect_open and answer != b'q\n':
             deadline = time.monotonic() + 3
             while not opened.exists() and time.monotonic() < deadline:
                 time.sleep(.02)
             self.assertTrue(opened.exists())
             return json.loads(opened.read_text())
         self.assertFalse(opened.exists())
+        return output.decode(errors='replace')
 
     def test_dolphin_default_is_first_result(self):
         self.assertEqual(self.interact(b'\n'), ['--', str(self.root / 'Recent')])
@@ -748,6 +754,22 @@ class Integration(unittest.TestCase):
 
     def test_dolphin_quit(self):
         self.interact(b'q\n')
+
+    def test_no_display_prevents_dolphin_launch(self):
+        self.env.pop('DISPLAY', None)
+        self.env.pop('WAYLAND_DISPLAY', None)
+        output = self.interact(b'\n', expect_code=1, expect_open=False)
+        self.assertIn('no graphical display is available', output)
+
+    def test_empty_display_values_prevent_dolphin_launch(self):
+        self.env.update(DISPLAY='', WAYLAND_DISPLAY='')
+        output = self.interact(b'\n', expect_code=1, expect_open=False)
+        self.assertIn('no graphical display is available', output)
+
+    def test_wayland_display_alone_permits_launch(self):
+        self.env.pop('DISPLAY', None)
+        self.env['WAYLAND_DISPLAY'] = 'synthetic-wayland'
+        self.assertEqual(self.interact(b'\n'), ['--', str(self.root / 'Recent')])
 
     def signal_probe(self, program):
         executable = self.bin / program

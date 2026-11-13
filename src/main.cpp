@@ -50,6 +50,12 @@ std::string clean(std::string s) {
 }
 // Start a desktop app independently: do not wait for or kill its GUI lifetime.
 void launch_dolphin(const fs::path& folder) {
+    auto nonempty_env = [](const char* name) {
+        const char* value = std::getenv(name);
+        return value && *value;
+    };
+    if (!nonempty_env("DISPLAY") && !nonempty_env("WAYLAND_DISPLAY"))
+        throw std::runtime_error("Cannot open Dolphin: no graphical display is available; DISPLAY or WAYLAND_DISPLAY must be set.");
     int errors[2];
     if (pipe2(errors, O_CLOEXEC) != 0) throw std::runtime_error("Cannot create Dolphin launch pipe.");
     pid_t pid = fork();
