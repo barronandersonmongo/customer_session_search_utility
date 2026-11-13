@@ -499,7 +499,7 @@ struct Result { size_t id; std::string customer, date, subject; int relevance; b
 std::string customer_from_folder(const fs::path& folder, const fs::path& root) {
     auto relative = folder.lexically_relative(root);
     auto part = relative.begin();
-    if (part == relative.end() || *part == "." || *part == "..") return "Unknown";
+    if (part == relative.end() || *part == "." || *part == "..") return "Unknown Customer";
     return clean(part->string());
 }
 std::string year_start(const std::string& year) {

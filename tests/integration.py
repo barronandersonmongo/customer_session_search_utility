@@ -505,8 +505,9 @@ class Integration(unittest.TestCase):
     def test_file_directly_under_customers_root_has_unknown_customer(self):
         self.ranking_fixture([])
         (self.root / 'notes.txt').write_text('Vector Search\n')
-        result = self.run_app('--local-only', 'Vector Search')
-        self.assertIn('1. Unknown |', result.stdout)
+        for args in ((), ('--local-only',)):
+            result = self.run_app(*args, 'Vector Search')
+            self.assertIn('1. Unknown Customer |', result.stdout)
 
     def test_separate_session_dates_stay_separate(self):
         first = self.session_tree()
