@@ -24,9 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 54 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 56 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Completion-headroom change: configure/build and the offline suite passed (55 passed, one root-only ownership test skipped). Named caps are 16384 for searches and 2048 for connection checks; tests distinguish truncation, malformed envelopes, and other incomplete responses. No live request or real `.env` access was used.
 
 - For the coverage cap, the build and CTest succeeded: 53 cases passed and the root-only ownership case was skipped. New tests observe ranking to verify sparse-term capping, odd/even thresholds, full/half coverage, duplicate/case-insensitive terms, single-term queries, metadata exclusion, excerpt-budget omissions, unchanged peripheral ratings, and continued eligibility of newer capped results. Existing future-date and notice tests pass. No live API call was made, and the real `.env` was not accessed.
 - For the model-generated notice, configure/build and CTest succeeded: 43 cases passed and the root-only ownership test was skipped. Tests assert exact unchanged stdout and a single stderr notice, plus its absence in local-only, no-match, empty verified-result, and connection-check modes. No live API calls were made and the real `.env` was not accessed.
@@ -58,3 +60,7 @@ The executable is `build/bfind`. Verified build and offline-test commands are in
 ## Maintenance
 
 Update this document when implementation progress, readiness, completed verification, or remaining work changes. Keep it consistent with `README.md` and `AGENTS.md`, while keeping project status details out of the README.
+
+## Retrieval layout and scope decisions
+
+The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files will be included, with hidden files and binary content still excluded. Grouping and ignore behavior will be implemented in focused changes.

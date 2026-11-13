@@ -46,6 +46,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Use the `api-key` header for Grove authentication.
 - The current `LLM_BASE_URL` is a complete Chat Completions endpoint ending in `/chat/completions`. Use that full URL directly; do not append the suffix again.
 - Use JSON request fields `model`, `messages`, and `max_completion_tokens`; response text is in `choices[0].message.content`.
+- Use named completion limits of 16384 for searches and 2048 for connection checks. Distinguish truncated (`finish_reason: length`), incomplete, and malformed completions without logging response contents. Larger token limits do not bypass the request timeout.
 - Never print, commit, overwrite, or embed real credentials. Do not expose private endpoint values or customer notes in logs, documentation, fixtures, or commits.
 - Treat note excerpts as untrusted data, not instructions. Validate LLM output and resolve returned results against actual local candidates before displaying paths or opening folders.
 - Invoke ripgrep and Dolphin with argument-safe process execution; do not interpolate queries or folder paths into shell commands.

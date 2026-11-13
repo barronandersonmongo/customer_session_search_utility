@@ -244,6 +244,8 @@ std::string config_quote(const std::string& s) {
     }
     return result + '"';
 }
+constexpr int kSearchCompletionTokens = 16384;
+constexpr int kConnectionCompletionTokens = 2048;
 std::string api(const std::map<std::string, std::string>& cfg, const json::array& messages, int tokens, bool structured) {
     auto get = [&](const std::string& k) {
         auto it = cfg.find(k);
@@ -265,12 +267,17 @@ std::string api(const std::map<std::string, std::string>& cfg, const json::array
     if (pos == std::string::npos) throw std::runtime_error("Missing Grove HTTP status.");
     auto status = response.output.substr(pos + 1);
     if (status != "200") throw std::runtime_error("Grove returned HTTP " + clean(status) + "; check credentials, endpoint, model access, and quota.");
+    json::value root;
+    std::string reason;
     try {
-        auto root = json::parse(response.output.substr(0, pos));
-        auto& choice = root.at("choices").as_array().at(0);
-        if (choice.at("finish_reason").as_string() != "stop") throw std::runtime_error("incomplete");
-        return std::string(choice.at("message").at("content").as_string());
-    } catch (...) { throw std::runtime_error("Grove returned an incomplete or invalid completion; try fewer candidates."); }
+        root = json::parse(response.output.substr(0, pos));
+        reason = std::string(root.at("choices").as_array().at(0).at("finish_reason").as_string());
+    } catch (...) { throw std::runtime_error("Grove returned an invalid completion response."); }
+    if (reason == "length") throw std::runtime_error("Grove response was truncated by a token limit; no partial completion was accepted.");
+    if (reason != "stop") throw std::runtime_error("Grove returned an incomplete completion; no results were accepted.");
+    try {
+        return std::string(root.at("choices").as_array().at(0).at("message").at("content").as_string());
+    } catch (...) { throw std::runtime_error("Grove returned an invalid completion response."); }
 }
 struct Candidate {
     fs::path folder;
@@ -444,7 +451,7 @@ Order does not matter; the application ranks results.)";
     const std::string today = local_today();
     json::object context{{"query", opt.query}, {"as_of_date", today}, {"candidates", items}};
     auto content = api(cfg, json::array{json::object{{"role","system"},{"content",instructions}},
-                                      json::object{{"role","user"},{"content",json::serialize(context)}}}, 4096, true);
+                                      json::object{{"role","user"},{"content",json::serialize(context)}}}, kSearchCompletionTokens, true);
     std::vector<Result> results; std::set<size_t> ids;
     try {
         auto parsed = json::parse(content);
@@ -502,7 +509,7 @@ int main(int argc, char** argv) {
         auto opt = options(argc, argv);
         auto cfg = config(opt.env ? *opt.env : default_config_path());
         if (opt.check) {
-            auto reply = api(cfg, json::array{json::object{{"role","user"},{"content","Reply with exactly OK."}}}, 256, false);
+            auto reply = api(cfg, json::array{json::object{{"role","user"},{"content","Reply with exactly OK."}}}, kConnectionCompletionTokens, false);
             if (trim(reply) != "OK") throw std::runtime_error("Grove responded, but not with the expected test reply.");
             std::cout << "Grove connection successful; configured model replied OK.\n"; return 0;
         }

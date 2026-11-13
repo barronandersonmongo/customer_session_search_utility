@@ -33,8 +33,10 @@ Path(os.environ['MOCK_CALLED']).write_text('called')
 if mode == 'http':
     print('{"error":"synthetic-secret"}\n401', end=''); sys.exit(0)
 if request['messages'][0]['content'] == 'Reply with exactly OK.':
+    assert request['max_completion_tokens'] == 2048
     content = 'OK'
 else:
+    assert request['max_completion_tokens'] == 16384
     context = json.loads(request['messages'][1]['content'])
     assert context['as_of_date'] == datetime.date.today().isoformat()
     candidates = context['candidates']
@@ -61,6 +63,9 @@ else:
     content = json.dumps(dict(results=results))
     if mode == 'malformed': content = 'not JSON'
 reply = dict(choices=[dict(finish_reason='length' if mode == 'length' else 'stop', message=dict(content=content))])
+if mode == 'missing-envelope': reply = {}
+if mode == 'null-content': reply['choices'][0]['message']['content'] = None
+if mode == 'filtered': reply['choices'][0]['finish_reason'] = 'content_filter'
 print(json.dumps(reply) + '\n200', end='')
 '''
 
@@ -310,6 +315,17 @@ class Integration(unittest.TestCase):
 
     def test_connection_check_sends_no_notes(self):
         self.assertIn('connection successful', self.run_app('--check-connection').stdout)
+
+    def test_truncation_has_specific_error(self):
+        for args in (('Vector Search',), ('--check-connection',)):
+            result = self.run_app(*args, mode='length', success=False)
+            self.assertIn('truncated', result.stderr)
+            self.assertNotIn('try fewer candidates', result.stderr)
+
+    def test_invalid_and_incomplete_completions_have_distinct_errors(self):
+        for mode in ('missing-envelope', 'null-content'):
+            self.assertIn('invalid completion response', self.run_app('Vector Search', mode=mode, success=False).stderr)
+        self.assertIn('incomplete completion', self.run_app('Vector Search', mode='filtered', success=False).stderr)
 
     def test_root_override_and_symlink_exclusion(self):
         outside = self.base / 'outside'
