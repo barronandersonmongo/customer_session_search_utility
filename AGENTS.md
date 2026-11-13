@@ -8,6 +8,8 @@ After each completed logical change, commit it to the repository to provide fine
 
 Keep `README.md` and `AGENTS.md` synchronized with the program as it changes. Update both files whenever changes affect their contents, including behavior, configuration, dependencies, build commands, usage, verification procedures, or project constraints. Make documentation updates in the same change as the corresponding implementation. Clearly distinguish planned features from implemented and tested behavior; do not invent commands or claim unperformed tests.
 
+Start the README with functional details: what the utility is, why it exists, and how it benefits the user. Keep architecture, technical decisions, configuration, and build and run instructions in the lower technical portion. Preserve this organization as the program evolves.
+
 ## Purpose and requirements
 
 Build a C++ command-line utility that helps the user find relevant, recent customer sessions and reuse prior notes, slides, and other materials.
