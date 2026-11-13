@@ -25,10 +25,9 @@ int main(int argc, char** argv) {
         const auto self = std::filesystem::canonical(argv[0]).string();
         for (const auto& mode : {"close-stdout", "hold-stdout"}) {
             auto start = std::chrono::steady_clock::now();
-            bool timed_out = false;
-            try { (void)process({self, mode}, "", 1024, 1); }
-            catch (const std::runtime_error& error) { timed_out = std::string(error.what()).find("timed out") != std::string::npos; }
-            require(timed_out, "Overdue child did not time out.");
+            auto result = process({self, mode}, "", 1024, 1);
+            require(result.timed_out, "Overdue child did not time out.");
+            if (std::string(mode) == "hold-stdout") require(result.output == "partial\n", "Timeout discarded partial output.");
             require(std::chrono::steady_clock::now() - start < std::chrono::seconds(3), "Deadline was exceeded.");
             int status;
             require(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD, "Child was not reaped.");

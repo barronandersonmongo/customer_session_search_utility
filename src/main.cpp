@@ -204,6 +204,7 @@ std::string api(const std::map<std::string, std::string>& cfg, const json::array
     auto response = process({"curl", "--disable", "--config", "-", "--silent", "--show-error", "--proto", "=https",
                              "--connect-timeout", "10", "--max-time", "55", "--write-out", "\n%{http_code}"}, input, 1024 * 1024, 60);
     if (response.code == 127) throw std::runtime_error("curl is required but was not found in PATH.");
+    if (response.timed_out || response.code == 28) throw std::runtime_error("Grove request timed out; no partial response was accepted.");
     if (response.code != 0 || response.limited) throw std::runtime_error("Grove request failed (transport error); check connectivity and endpoint.");
     auto pos = response.output.rfind('\n');
     if (pos == std::string::npos) throw std::runtime_error("Missing Grove HTTP status.");
@@ -248,7 +249,8 @@ std::vector<std::string> terms(const std::string& query) {
     for (const auto& word : result) if (!stopwords.count(word)) filtered.push_back(word);
     return filtered.empty() ? result : filtered;
 }
-std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
+struct Retrieval { std::vector<Candidate> candidates; bool partial; };
+Retrieval retrieve(const Options& opt, const fs::path& root) {
     auto words = terms(opt.query);
     std::vector<std::string> args{"rg", "--no-config", "--json", "--sort", "path", "--ignore-case", "--fixed-strings", "--context", std::to_string(opt.context),
         "--max-count", "12", "--max-filesize", "2M", "--color", "never"};
@@ -256,9 +258,12 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
     args.push_back("--"); args.push_back(root.string());
     auto found = process(args, "", 16 * 1024 * 1024, 30);
     if (found.code == 127) throw std::runtime_error("ripgrep (rg) is required but was not found in PATH.");
-    if (found.code > 1 && !found.limited) throw std::runtime_error("ripgrep could not complete the search; check directory permissions.");
+    if (found.code > 1 && !found.limited && !found.timed_out) throw std::runtime_error("ripgrep could not complete the search; check directory permissions.");
     if (found.limited) std::cerr << "Search output limit reached; narrow the topic or search root for fuller coverage.\n";
+    if (found.timed_out) std::cerr << "Search timed out; using partial results received so far. Coverage is incomplete.\n";
     std::map<std::string, Candidate> grouped;
+    std::map<std::string, std::optional<fs::path>> canonical_paths;
+    size_t skipped_paths = 0;
     std::istringstream stream(found.output); std::string line;
     while (std::getline(stream, line)) {
         boost::system::error_code ec;
@@ -270,7 +275,16 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
         auto* pathtext = data.at("path").as_object().if_contains("text");
         auto* text = data.at("lines").as_object().if_contains("text");
         if (!pathtext || !text) continue;
-        fs::path path = fs::weakly_canonical(std::string(pathtext->as_string()));
+        const std::string raw_path(pathtext->as_string());
+        auto entry = canonical_paths.emplace(raw_path, std::nullopt);
+        if (entry.second) {
+            std::error_code ec;
+            auto canonical = fs::weakly_canonical(raw_path, ec);
+            if (!ec && fs::is_regular_file(canonical, ec) && !ec) entry.first->second = std::move(canonical);
+            else ++skipped_paths;
+        }
+        if (!entry.first->second) continue;
+        const auto& path = *entry.first->second;
         if (!inside(path, root)) continue;
         auto folder = path.parent_path();
         auto& candidate = grouped[folder.string()]; candidate.folder = folder;
@@ -289,6 +303,7 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
         }
         if (type == "match") ++candidate.hits;
     }
+    if (skipped_paths) std::cerr << "Skipped " << skipped_paths << " inaccessible file path(s); search coverage is partial.\n";
     std::vector<Candidate> candidates;
     std::vector<size_t> folder_frequency(words.size(), 0);
     for (auto& item : grouped) {
@@ -337,7 +352,7 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
         std::cerr << "Considering the top " << opt.candidates << " matching folders; the newest session may be outside this shortlist. Use --candidates or narrow --root for broader coverage.\n";
         candidates.resize(opt.candidates);
     }
-    return candidates;
+    return {std::move(candidates), found.limited || found.timed_out || skipped_paths != 0};
 }
 bool valid_date(const std::string& s) {
     if (!std::regex_match(s, std::regex("[0-9]{4}-[0-9]{2}-[0-9]{2}"))) return false;
@@ -482,15 +497,22 @@ int main(int argc, char** argv) {
         if (opt.root.empty()) opt.root = cfg.count("SEARCH_ROOT") ? cfg.at("SEARCH_ROOT") : "/home/barry/GoogleDrive/Builder Relations/Customers/";
         if (!fs::is_directory(opt.root)) throw std::runtime_error("Search root is not an accessible directory.");
         auto root = fs::canonical(opt.root);
-        auto candidates = retrieve(opt, root);
-        if (candidates.empty()) { std::cout << "No local matches found.\n"; return 0; }
+        auto retrieved = retrieve(opt, root);
+        auto& candidates = retrieved.candidates;
+        if (candidates.empty()) {
+            std::cout << (retrieved.partial ? "No local matches found in partial search results; coverage is incomplete.\n" : "No local matches found.\n");
+            return 0;
+        }
         std::vector<Result> results;
         if (opt.local) {
             std::cerr << "Local matches only; customer, delivery date, and relevance are unverified.\n";
             for (size_t i = 0; i < candidates.size(); ++i) results.push_back({i,"Unknown","Unknown","Unverified local topic match",1});
         } else results = verify(opt, candidates, cfg);
         if (results.size() > static_cast<size_t>(opt.results)) results.resize(opt.results);
-        if (results.empty()) { std::cout << "No relevant sessions identified in the candidate excerpts.\n"; return 0; }
+        if (results.empty()) {
+            std::cout << (retrieved.partial ? "No relevant sessions identified in partial candidate excerpts; coverage is incomplete.\n" : "No relevant sessions identified in the candidate excerpts.\n");
+            return 0;
+        }
         for (size_t i = 0; i < results.size(); ++i) {
             const auto& r = results[i];
             std::cout << i + 1 << ". " << r.customer << " | " << r.date << " | " << r.subject << '\n'

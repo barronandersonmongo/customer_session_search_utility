@@ -24,9 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 64 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 69 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Partial-result robustness: final rebuild and both CTest suites passed (68 integration passes, one root-only skip, plus native process checks). A synthetic mock ripgrep exercised the real 30-second timeout and retained completed records. Tests cover repeated inaccessible paths counted once, other-file survival, partial empty-result wording, and curl exit-28 timeout rejection. Native tests also assert preserved partial bytes and reaping. An intermediate stale-build error was corrected by rebuilding the final source before the successful run. No live API calls or real `.env` access.
 
 - Child-process deadline fix: configure/build and both CTest suites passed. The 64-case integration suite had 63 passes and one root-only skip; native tests exercised early stdout closure, a child holding stdout open, bounded deadlines, child reaping, bidirectional large-pipe exchange, and output caps. Process code now lives in `src/process.cpp` for direct tests without public timeout switches. This prerequisite was completed before partial-result handling.
 

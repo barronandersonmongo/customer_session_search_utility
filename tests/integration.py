@@ -30,6 +30,7 @@ request = json.loads(config['data-binary'][0])
 assert request['model'] == 'gpt-6-astra'
 mode = os.environ.get('TEST_MODE', '')
 Path(os.environ['MOCK_CALLED']).write_text('called')
+if mode == 'curl-timeout': sys.exit(28)
 if mode == 'http':
     print('{"error":"synthetic-secret"}\n401', end=''); sys.exit(0)
 if request['messages'][0]['content'] == 'Reply with exactly OK.':
@@ -117,10 +118,10 @@ class Integration(unittest.TestCase):
         (p / name).write_text(content)
         return p
 
-    def run_app(self, *args, mode='', success=True):
+    def run_app(self, *args, mode='', success=True, timeout=15):
         env = dict(self.env, TEST_MODE=mode)
         result = subprocess.run([BINARY, '--env', str(self.config), '--no-open', *args],
-                                env=env, cwd=self.base, text=True, capture_output=True, timeout=15)
+                                env=env, cwd=self.base, text=True, capture_output=True, timeout=timeout)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         self.assertNotIn('synthetic-secret', result.stdout + result.stderr)
         return result
@@ -379,6 +380,11 @@ class Integration(unittest.TestCase):
             self.assertIn('truncated', result.stderr)
             self.assertNotIn('try fewer candidates', result.stderr)
 
+    def test_curl_timeout_remains_an_error(self):
+        result = self.run_app('Vector Search', mode='curl-timeout', success=False)
+        self.assertIn('Grove request timed out', result.stderr)
+        self.assertNotIn('1. ', result.stdout)
+
     def test_invalid_and_incomplete_completions_have_distinct_errors(self):
         for mode in ('missing-envelope', 'null-content'):
             self.assertIn('invalid completion response', self.run_app('Vector Search', mode=mode, success=False).stderr)
@@ -542,6 +548,45 @@ class Integration(unittest.TestCase):
             self.assertIn('Search output limit reached', result.stderr)
             outputs.append(result.stdout)
         self.assertEqual(outputs[0], outputs[1])
+
+    def mock_rg(self, paths, delay=0):
+        events = [dict(type='match', data=dict(path=dict(text=str(path)), line_number=1,
+                  lines=dict(text='Vector Search\nDelivered: 2026-10-22\n'))) for path in paths]
+        script = self.bin / 'rg'
+        script.write_text('#!' + sys.executable + '\nimport json, time\n' +
+                          'events = ' + repr(events) + '\n' +
+                          'for event in events: print(json.dumps(event), flush=True)\n' +
+                          'time.sleep(' + str(delay) + ')\n')
+        script.chmod(0o755)
+
+    def test_search_timeout_retains_partial_records(self):
+        self.mock_rg([self.root / 'Recent' / 'notes.txt'], delay=60)
+        started = time.monotonic()
+        result = self.run_app('--local-only', 'Vector Search', timeout=35)
+        self.assertIn(str(self.root / 'Recent'), result.stdout)
+        self.assertIn('Search timed out; using partial results', result.stderr)
+        self.assertLess(time.monotonic() - started, 34)
+
+    def test_inaccessible_paths_are_counted_once_and_other_files_survive(self):
+        blocked = self.root / 'blocked'
+        blocked.write_text('not a directory')
+        bad = blocked / 'notes.txt'
+        self.mock_rg([bad, bad, self.root / 'Recent' / 'notes.txt'])
+        result = self.run_app('--local-only', 'Vector Search')
+        self.assertIn('Skipped 1 inaccessible file path(s)', result.stderr)
+        self.assertIn(str(self.root / 'Recent'), result.stdout)
+        self.assertNotIn(str(bad), result.stdout + result.stderr)
+
+    def test_empty_partial_search_does_not_claim_complete_coverage(self):
+        self.mock_rg([self.root / 'removed.txt'])
+        result = self.run_app('--local-only', 'Vector Search')
+        self.assertIn('partial search results; coverage is incomplete', result.stdout)
+        self.assertNotIn('Model-generated', result.stderr)
+
+    def test_empty_verification_of_partial_search_is_labeled(self):
+        self.mock_rg([self.root / 'removed.txt', self.root / 'Recent' / 'notes.txt'])
+        result = self.run_app('Vector Search', mode='empty')
+        self.assertIn('partial candidate excerpts; coverage is incomplete', result.stdout)
 
     def interact(self, answer):
         master, slave = pty.openpty()

@@ -79,6 +79,5 @@ ProcessResult process(const std::vector<std::string>& args, const std::string& i
         poll(nullptr, 0, 20);
     }
     if (!reaped) while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
-    if (timeout) throw std::runtime_error("Child process timed out.");
-    return {WIFEXITED(status) ? WEXITSTATUS(status) : 128, std::move(output), limited};
+    return {WIFEXITED(status) ? WEXITSTATUS(status) : 128, std::move(output), limited, timeout};
 }
