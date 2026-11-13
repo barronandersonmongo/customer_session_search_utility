@@ -10,6 +10,8 @@ After each completed logical change, commit it to the repository to provide fine
 
 ## Documentation maintenance
 
+`BARRY_README.md` contains checkout-local personal usage notes and is Git-ignored. Never stage, force-add, or publish it. If it exists, keep its usage and launcher-location notes accurate when those change, without copying its contents into tracked documentation.
+
 Keep `README.md`, `AGENTS.md`, and `PROJECT_STATUS.md` synchronized with the program as it changes. Update each affected document in the same change as the corresponding implementation. Keep functional and technical reference material in the README, contributor instructions in AGENTS, and progress, readiness, completed verification, and outstanding work in PROJECT_STATUS. Do not put project status details in the README. Clearly distinguish planned features from implemented and tested behavior; do not invent commands or claim unperformed tests.
 
 Start the README with functional details: what the utility is, why it exists, and how it benefits the user. Keep architecture, technical decisions, configuration, and build and run instructions in the lower technical portion. Preserve this organization as the program evolves.
