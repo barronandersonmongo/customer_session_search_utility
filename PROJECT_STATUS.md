@@ -6,7 +6,7 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
-- Recorded the user's requirement to retain the exact hardcoded fallback search root `/home/barry/GoogleDrive/Builder Relations/Customers/`, without environment-based derivation. Existing explicit SEARCH_ROOT and --root overrides remain available; application behavior already matches this requirement.
+- Enforced the user's fixed search root `/home/barry/GoogleDrive/Builder Relations/Customers/`. --root is rejected, and SEARCH_ROOT is accepted only as an unused legacy setting equal to that exact literal. Other values fail before search or API requests. Launching from other working directories remains allowed.
 - Added a one-line stderr notice after nonempty LLM-generated results, preserving stdout and excluding local-only, empty-result, and connection-check modes.
 - Added a 50% distinct-term coverage requirement, rounded up, for direct relevance 3. Coverage counts only note text retained in the submitted excerpt, excluding path/filename metadata and omitted lines. Insufficient coverage caps 3 to 2 without dropping results or changing recency-first eligibility. The threshold is centralized in `kMinimumDirectCoveragePercent`.
 - Named the program `bfind` (Barry Find), including its executable, build target, installation target, and CLI help.
@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 74 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 78 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Fixed-root restriction: configure/build and both CTest suites passed (77 integration passes, one root-only ownership skip, plus native process checks). Production and fixture executables reject CLI/config/environment root redirection; tests include empty, parent-traversal, and HOME-like config values. The exact legacy literal remains compatible without routing. Tests now use a separate, non-installed executable with a fixed compile-time build-directory fixture root and no runtime root override. The production target remains fixed to the customer folder. No real customer-note contents or real `.env` were accessed; API calls were mocked.
 
 - Final scope-policy verification: configure/build and both CTest suites passed (73 integration passes, one root-only ownership skip, plus native process checks). Tests demonstrate that `.ignore` and `.gitignore` no longer hide ordinary notes, while hidden folders, hidden files (including a synthetic `.env`), and binary files remain excluded. No live API calls, real customer-note reads, or real `.env` access were performed.
 
@@ -64,6 +66,8 @@ The executable is `build/bfind`. Verified build and offline-test commands are in
 
 ## Remaining validation and limitations
 
+- Metadata-only inspection confirmed the actual common layout is customer/year/dated-topic/documents, with some exceptions. Current grouping still uses the first two directory levels; correcting the year/session boundary remains separate work.
+
 - Matching date evidence does not authenticate a delivery. Customer and subject are not independently verified against excerpts; convincing planted notes with forged past dates can still mislead the model and ranking.
 - The coverage cap is a lexical consistency check, not a prompt-injection security barrier. Planted text can include all query terms. Ratings 2 and 3 remain on-topic, so the cap affects relevance tie-breaking, not recency-first ordering or eligibility. Evidenced future deliveries remain excluded.
 - Actual customer-note searches have not been used for acceptance testing. Evaluate extraction quality against known sessions during normal use and adjust retrieval context if needed.
@@ -78,4 +82,4 @@ Update this document when implementation progress, readiness, completed verifica
 
 ## Retrieval layout and scope decisions
 
-The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files are included, with hidden files and binary content still excluded. Customer/date grouping is implemented, with the configured root anchoring the layout and narrowed roots retaining containment. The ignore decision is implemented with `--no-ignore` and no `--hidden`; there are no outstanding layout or ignore-policy questions from this review.
+The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files are included, with hidden files and binary content still excluded. The fixed customer root anchors grouping; configurable and narrowed search roots have been removed. The ignore decision is implemented with `--no-ignore` and no `--hidden`; there are no outstanding layout or ignore-policy questions from this review.

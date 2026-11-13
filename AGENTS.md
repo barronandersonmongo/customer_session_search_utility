@@ -20,9 +20,9 @@ The program is named `bfind` (Barry Find). Use lowercase `bfind` for the command
 
 Build a C++ command-line utility that helps the user find relevant, recent customer sessions and reuse prior notes, slides, and other materials.
 
-- Notes are primarily plain text under `/home/barry/GoogleDrive/Builder Relations/Customers/`; make the search root configurable.
-- Preserve the exact literal fallback search root `/home/barry/GoogleDrive/Builder Relations/Customers/`. The user explicitly requires this fixed path for security: do not derive it from HOME, other environment values, the current directory, or alternate locations. Preserve existing explicit SEARCH_ROOT and --root overrides; do not replace the fallback with a required-setting error.
-- The user confirmed customer/date/document layout with multiple documents per session. Group direct and nested documents under each customer/date folder using the configured SEARCH_ROOT as anchor. When --root narrows within it, retain the anchor but never return/open a session folder outside --root; clip to the narrowed root when necessary. Use session-relative filenames so equal basenames in different subfolders remain distinct. Do not infer validated delivery dates from grouping boundaries.
+- Notes are primarily plain text under the only permitted search folder `/home/barry/GoogleDrive/Builder Relations/Customers/`.
+- Preserve the exact literal search root `/home/barry/GoogleDrive/Builder Relations/Customers/`. The user explicitly requires this fixed path for security: do not derive it from HOME, other environment values, the current directory, or alternate locations. Reject --root and any SEARCH_ROOT value other than the exact legacy literal (including its trailing slash). Never use SEARCH_ROOT for routing. Launching from other working directories is allowed.
+- The user confirmed customer/date/document layout with multiple documents per session. Group direct and nested documents under each customer/date folder using the fixed Customers root as anchor. Never return/open a folder outside that root. Use session-relative filenames so equal basenames in different subfolders remain distinct. Do not infer validated delivery dates from grouping boundaries.
 - Retrieve topic matches locally with ripgrep and bounded surrounding context. Group related matches and remove duplicates before invoking the LLM.
 - Use the LLM to verify relevance and extract customer, delivery date, and subject from the supplied evidence.
 - Show condensed, numbered results containing the full folder path, customer, date, and subject. Suppress other noise.
@@ -41,10 +41,10 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 ## Configuration and Grove integration
 
 - Default to `$XDG_CONFIG_HOME/bfind/.env` when XDG_CONFIG_HOME is absolute, otherwise `$HOME/.config/bfind/.env`. Ignore empty or relative XDG_CONFIG_HOME; require an absolute HOME fallback and fail clearly if neither base is usable. Never read cwd `./.env` implicitly.
-- Preserve `--env FILE` as an explicit trusted-file selection, including relative paths. Missing config files are allowed; environment variables override file values individually and `--root` overrides SEARCH_ROOT.
+- Preserve `--env FILE` as an explicit trusted-file selection, including relative paths. Missing config files are allowed; environment variables override API file values individually; no config or environment setting may redirect the search root.
 - Check permissions and ownership with `fstat()` on the same descriptor used to read the configuration. Warn once and continue if mode has any `077` bits or ownership differs from the effective user; do not expose values or paths in the warning. Reject nonregular config files.
 - Maintain a credential-free `.env.example`. Do not read, move, or overwrite the real project `.env` for migration; document user-run migration or explicit `--env` instructions instead.
-- Current variable names are `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `SEARCH_ROOT`.
+- Current variable names are `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`. SEARCH_ROOT is obsolete except for accepting the exact fixed legacy literal without using it.
 - The chosen model is `gpt-6-astra`. Preserve this selection unless the user changes it; keep it configurable.
 - Use the `api-key` header for Grove authentication.
 - The current `LLM_BASE_URL` is a complete Chat Completions endpoint ending in `/chat/completions`. Use that full URL directly; do not append the suffix again.
@@ -73,3 +73,5 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Use minimal live API requests only when needed to verify the connection or integration; avoid sending customer notes solely for a connectivity check.
 - Preserve the existing local `.env` and keep it Git-ignored. Never inspect secrets by dumping the file into tool output.
 - Documentation-only changes require consistency and formatting review, not live API calls.
+
+- Keep the synthetic integration fixture executable separate and non-installed, with a fixed compile-time build-directory root and no runtime root override. Production `bfind` must never accept an alternate root via CLI, config, environment, or cwd. Do not read or modify the real `.env` to migrate this setting.

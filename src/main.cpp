@@ -28,6 +28,13 @@
 namespace fs = std::filesystem;
 namespace json = boost::json;
 using namespace std::string_literals;
+constexpr const char* kAllowedSearchRoot = "/home/barry/GoogleDrive/Builder Relations/Customers/";
+#ifdef BFIND_TEST_SEARCH_ROOT
+// Dedicated, non-installed fixture executable only; production has no runtime override.
+constexpr const char* kSearchRoot = BFIND_TEST_SEARCH_ROOT;
+#else
+constexpr const char* kSearchRoot = kAllowedSearchRoot;
+#endif
 
 std::string trim(std::string s) {
     auto begin = s.find_first_not_of(" \r\n\t");
@@ -69,7 +76,6 @@ void launch_dolphin(const fs::path& folder) {
 
 struct Options {
     std::optional<fs::path> env;
-    fs::path root;
     std::string query;
     int candidates = 40, results = 10, context = 6;
     bool no_open = false, local = false, check = false;
@@ -88,7 +94,7 @@ Options options(int argc, char** argv) {
         auto value = [&]() -> std::string { if (++i >= argc) throw std::runtime_error("Missing option value."); return argv[i]; };
         if (a == "--help" || a == "-h") {
             std::cout << "Usage: bfind [options] TOPIC\n"
-                         "  --root DIR          Notes directory (overrides SEARCH_ROOT)\n"
+                         "  Searches only /home/barry/GoogleDrive/Builder Relations/Customers/\n"
                          "  --env FILE          Explicit config file (default: $XDG_CONFIG_HOME/bfind/.env\n"
                          "                      or $HOME/.config/bfind/.env)\n"
                          "  --limit N           Display at most N results (default 10, max 30)\n"
@@ -98,7 +104,7 @@ Options options(int argc, char** argv) {
                          "  --local-only        Show unverified local matches without calling the LLM\n"
                          "  --check-connection  Make a minimal Grove request; no notes are sent\n";
             std::exit(0);
-        } else if (a == "--root") o.root = value();
+        } else if (a == "--root") throw std::runtime_error("--root overrides are not allowed; the search folder is fixed.");
         else if (a == "--env") o.env = value();
         else if (a == "--limit") o.results = number(value(), 30);
         else if (a == "--candidates") o.candidates = number(value(), 40);
@@ -168,9 +174,15 @@ std::map<std::string, std::string> config(const fs::path& path) {
             auto comment = value.find(" #");
             if (comment != std::string::npos) value = trim(value.substr(0, comment));
         }
+        if (key == "SEARCH_ROOT") {
+            if (value != kAllowedSearchRoot) throw std::runtime_error("SEARCH_ROOT overrides are not allowed; the search folder is fixed.");
+            continue; // Accept the old exact literal for compatibility, never use it for routing.
+        }
         values[key] = value;
     }
-    for (const auto& key : {"LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL", "SEARCH_ROOT"})
+    if (const char* root = std::getenv("SEARCH_ROOT"); root && std::string(root) != kAllowedSearchRoot)
+        throw std::runtime_error("SEARCH_ROOT overrides are not allowed; the search folder is fixed.");
+    for (const auto& key : {"LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL"})
         if (const char* v = std::getenv(key)) values[key] = v;
     return values;
 }
@@ -272,7 +284,7 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const fs::path& gro
     auto found = process(args, "", 16 * 1024 * 1024, 30);
     if (found.code == 127) throw std::runtime_error("ripgrep (rg) is required but was not found in PATH.");
     if (found.code > 1 && !found.limited && !found.timed_out) throw std::runtime_error("ripgrep could not complete the search; check directory permissions.");
-    if (found.limited) std::cerr << "Search output limit reached; narrow the topic or search root for fuller coverage.\n";
+    if (found.limited) std::cerr << "Search output limit reached; refine the topic for fuller coverage.\n";
     if (found.timed_out) std::cerr << "Search timed out; using partial results received so far. Coverage is incomplete.\n";
     std::map<std::string, Candidate> grouped;
     std::map<std::string, std::optional<fs::path>> canonical_paths;
@@ -363,7 +375,7 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const fs::path& gro
         return a.folder.string() < b.folder.string();
     });
     if (candidates.size() > static_cast<size_t>(opt.candidates)) {
-        std::cerr << "Considering the top " << opt.candidates << " matching folders; the newest session may be outside this shortlist. Use --candidates or narrow --root for broader coverage.\n";
+        std::cerr << "Considering the top " << opt.candidates << " matching folders; the newest session may be outside this shortlist. Use --candidates or refine the topic for broader coverage.\n";
         candidates.resize(opt.candidates);
     }
     return {std::move(candidates), found.limited || found.timed_out || skipped_paths != 0};
@@ -508,16 +520,9 @@ int main(int argc, char** argv) {
             if (trim(reply) != "OK") throw std::runtime_error("Grove responded, but not with the expected test reply.");
             std::cout << "Grove connection successful; configured model replied OK.\n"; return 0;
         }
-        if (opt.root.empty()) opt.root = cfg.count("SEARCH_ROOT") ? cfg.at("SEARCH_ROOT") : "/home/barry/GoogleDrive/Builder Relations/Customers/";
-        if (!fs::is_directory(opt.root)) throw std::runtime_error("Search root is not an accessible directory.");
-        auto root = fs::canonical(opt.root);
-        fs::path grouping_anchor = root;
-        if (cfg.count("SEARCH_ROOT") && !cfg.at("SEARCH_ROOT").empty()) {
-            std::error_code ec;
-            auto configured_root = fs::weakly_canonical(cfg.at("SEARCH_ROOT"), ec);
-            if (!ec && inside(root, configured_root)) grouping_anchor = std::move(configured_root);
-        }
-        auto retrieved = retrieve(opt, root, grouping_anchor);
+        if (!fs::is_directory(kSearchRoot)) throw std::runtime_error("The fixed customer notes folder is not an accessible directory.");
+        const auto root = fs::canonical(kSearchRoot);
+        auto retrieved = retrieve(opt, root, root);
         auto& candidates = retrieved.candidates;
         if (candidates.empty()) {
             std::cout << (retrieved.partial ? "No local matches found in partial search results; coverage is incomplete.\n" : "No local matches found.\n");

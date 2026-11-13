@@ -16,6 +16,9 @@ import time
 import unittest
 
 BINARY = str(Path(sys.argv.pop(1)).resolve())
+FIXTURE_ROOT = Path(sys.argv.pop(1)).resolve()
+PRODUCTION_BINARY = str(Path(sys.argv.pop(1)).resolve())
+LOCKED_ROOT = '/home/barry/GoogleDrive/Builder Relations/Customers/'
 MOCK_CURL = r'''
 import datetime, json, os, sys
 from pathlib import Path
@@ -90,8 +93,9 @@ class Integration(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='session-search-test-')
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
-        self.root = self.base / 'Notes with spaces'
+        self.root = FIXTURE_ROOT
         self.root.mkdir()
+        self.addCleanup(shutil.rmtree, self.root)
         self.bin = self.base / 'bin'
         self.bin.mkdir()
         curl = self.bin / 'curl'
@@ -109,7 +113,7 @@ class Integration(unittest.TestCase):
         self.config = self.base / 'settings.env'
         self.config.write_text('export LLM_API_KEY="synthetic-secret" # comment\n'
                                'LLM_BASE_URL=https://example.invalid/chat/completions\n'
-                               'LLM_MODEL=gpt-6-astra\nSEARCH_ROOT="' + str(self.root) + '"\n')
+                               'LLM_MODEL=gpt-6-astra\n')
         self.config.chmod(0o600)
         self.note('Old', 'Customer: Old\nDelivered: 2025-09-14\nSubject: Vector Search Workshop\n')
         self.note('Recent', 'Customer: Recent\nDelivered: 2026-10-22\nSubject: Vector Search Workshop\n')
@@ -278,7 +282,8 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.base / 'called').exists())
 
     def test_model_notice_is_stderr_only_and_stdout_is_unchanged(self):
-        result = self.run_app('--root', str(self.root / 'Recent'), 'Vector Search')
+        self.ranking_fixture([('Recent', '2026-10-22', 3, 1)])
+        result = self.run_app('Vector Search')
         self.assertEqual(result.stdout, '1. Recent | 2026-10-22 | Vector Search Workshop\n   ' +
                          str(self.root / 'Recent') + '\n\n')
         self.assertEqual(result.stderr, 'Model-generated results: check customer, date, and subject in the folder before relying on them.\n')
@@ -294,7 +299,7 @@ class Integration(unittest.TestCase):
         self.assertIn('No relevant sessions', self.run_app('Vector Search', mode='empty').stdout)
 
     def test_local_only_needs_no_credentials(self):
-        self.config.write_text('SEARCH_ROOT="' + str(self.root) + '"\n')
+        self.config.write_text('')
         result = self.run_app('--local-only', 'Vector Search')
         self.assertIn('unverified', result.stderr)
         self.assertIn('Unknown', result.stdout)
@@ -329,8 +334,9 @@ class Integration(unittest.TestCase):
                 self.assertIn('| Unknown |', result.stdout)
 
     def test_named_date(self):
+        self.ranking_fixture([])
         self.note('Recent', 'Vector Search\nDelivered October 22, 2026\n')
-        result = self.run_app('--root', str(self.root / 'Recent'), 'Vector Search', mode='named-date')
+        result = self.run_app('Vector Search', mode='named-date')
         self.assertIn('| 2026-10-22 |', result.stdout)
 
     def test_candidate_and_excerpt_limits(self):
@@ -400,13 +406,48 @@ class Integration(unittest.TestCase):
         self.assertIn(str(first), result.stdout)
         self.assertIn(str(second), result.stdout)
 
-    def test_narrow_root_preserves_session_boundary_and_containment(self):
-        session = self.session_tree()
-        for root, expected in ((session.parent, session), (session, session), (session / 'notes', session / 'notes')):
-            with self.subTest(root=root):
-                result = self.run_app('--local-only', '--root', str(root), 'Vector Search')
-                self.assertEqual(result.stdout.count('\n   '), 1)
-                self.assertIn('\n   ' + str(expected) + '\n', result.stdout)
+    def test_root_option_is_rejected(self):
+        for executable in (BINARY, PRODUCTION_BINARY):
+            for root in (str(self.root), LOCKED_ROOT, '/tmp', '..'):
+                with self.subTest(executable=executable, root=root):
+                    result = subprocess.run([executable, '--root', root, 'Vector Search'],
+                                            env=self.env, cwd=self.base, text=True, capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn('--root overrides are not allowed', result.stderr)
+        self.assertFalse((self.base / 'called').exists())
+
+    def test_environment_cannot_redirect_root_including_production(self):
+        self.env['SEARCH_ROOT'] = str(self.base / 'outside')
+        for executable in (BINARY, PRODUCTION_BINARY):
+            result = subprocess.run([executable, '--env', str(self.config), '--check-connection'],
+                                    env=self.env, cwd=self.base, text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('SEARCH_ROOT overrides are not allowed', result.stderr)
+        self.assertFalse((self.base / 'called').exists())
+
+    def test_config_cannot_redirect_root_including_production(self):
+        original = self.config.read_text()
+        for value in ('/tmp', '', LOCKED_ROOT + '../', '$HOME/Customers'):
+            self.config.write_text(original + 'SEARCH_ROOT="' + value + '"\n')
+            for executable in (BINARY, PRODUCTION_BINARY):
+                with self.subTest(value=value, executable=executable):
+                    result = subprocess.run([executable, '--env', str(self.config), '--check-connection'],
+                                            env=self.env, cwd=self.base, text=True, capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn('SEARCH_ROOT overrides are not allowed', result.stderr)
+        self.assertFalse((self.base / 'called').exists())
+
+    def test_legacy_exact_literal_is_accepted_but_does_not_route_search(self):
+        self.config.write_text(self.config.read_text() + 'SEARCH_ROOT="' + LOCKED_ROOT + '"\n')
+        self.env['SEARCH_ROOT'] = LOCKED_ROOT
+        self.assertIn('1. Recent', self.run_app('Vector Search').stdout)
+        result = subprocess.run([PRODUCTION_BINARY, '--env', str(self.config), '--check-connection'],
+                                env=self.env, cwd=self.base, text=True, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_launch_directory_is_not_restricted(self):
+        result = self.run_app('--local-only', 'Vector Search')
+        self.assertIn(str(self.root / 'Recent'), result.stdout)
 
     def test_ignore_rules_do_not_hide_ordinary_notes(self):
         (self.root / '.ignore').write_text('Ignored/\n')
@@ -452,25 +493,23 @@ class Integration(unittest.TestCase):
             self.assertIn('invalid completion response', self.run_app('Vector Search', mode=mode, success=False).stderr)
         self.assertIn('incomplete completion', self.run_app('Vector Search', mode='filtered', success=False).stderr)
 
-    def test_root_override_and_symlink_exclusion(self):
+    def test_symlink_exclusion(self):
         outside = self.base / 'outside'
         outside.mkdir()
         (outside / 'notes.txt').write_text('Vector Search private outside root')
         (self.root / 'link').symlink_to(outside, target_is_directory=True)
-        result = self.run_app('--root', str(self.root / 'Old'), 'Vector Search')
-        self.assertIn('1. Old', result.stdout)
-        self.assertNotIn('Recent', result.stdout)
         self.assertNotIn('outside', self.run_app('--local-only', 'private outside root').stdout)
 
     def test_literal_queries_and_paths_are_not_shell_commands(self):
         folder = self.note("Customer $(touch PWNED); 'quoted'", '$(touch PWNED)\n')
-        result = self.run_app('--local-only', '--root', str(folder), '--', '$(touch PWNED)')
+        result = self.run_app('--local-only', '--', '$(touch PWNED)')
         self.assertIn(str(folder), result.stdout)
         self.assertFalse((self.base / 'PWNED').exists())
 
     def test_environment_overrides_dotenv(self):
-        self.env['SEARCH_ROOT'] = str(self.root / 'Old')
-        self.assertNotIn('Recent', self.run_app('Vector Search').stdout)
+        self.config.write_text(self.config.read_text().replace('gpt-6-astra', 'wrong-model'))
+        self.env['LLM_MODEL'] = 'gpt-6-astra'
+        self.assertIn('Recent', self.run_app('Vector Search').stdout)
 
     def default_config(self, base):
         target = base / 'bfind' / '.env'
@@ -491,7 +530,7 @@ class Integration(unittest.TestCase):
         (self.base / '.env').write_text('LLM_BASE_URL=https://attacker.invalid/steal\n'
                                        'SEARCH_ROOT=/untrusted/unrelated\n')
         self.env.update(LLM_API_KEY='synthetic-secret', LLM_MODEL='gpt-6-astra')
-        result = self.run_default('--root', str(self.root), 'Vector Search', success=False)
+        result = self.run_default('Vector Search', success=False)
         self.assertIn('Missing LLM_BASE_URL', result.stderr)
         self.assertFalse((self.base / 'called').exists())
 
@@ -532,11 +571,11 @@ class Integration(unittest.TestCase):
 
     def test_missing_default_allows_environment_only(self):
         self.env.update(LLM_API_KEY='synthetic-secret', LLM_MODEL='gpt-6-astra',
-                        LLM_BASE_URL='https://example.invalid/chat/completions', SEARCH_ROOT=str(self.root))
+                        LLM_BASE_URL='https://example.invalid/chat/completions')
         self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
 
     def test_missing_default_allows_local_only(self):
-        result = self.run_default('--root', str(self.root), '--local-only', 'Vector Search')
+        result = self.run_default('--local-only', 'Vector Search')
         self.assertIn('unverified', result.stderr)
         self.assertFalse((self.base / 'called').exists())
 
@@ -580,7 +619,7 @@ class Integration(unittest.TestCase):
         self.run_app('Vector Search')
         after = {str(p): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
         self.assertEqual(before, after)
-        self.assertEqual(set(p.name for p in self.base.iterdir()), {'Notes with spaces', 'bin', 'settings.env', 'called'})
+        self.assertEqual(set(p.name for p in self.base.iterdir()), {'bin', 'settings.env', 'called'})
 
     def test_noninteractive_input_never_prompts(self):
         result = subprocess.run([BINARY, '--env', str(self.config), 'Vector Search'],
@@ -591,7 +630,7 @@ class Integration(unittest.TestCase):
 
     def test_utf8_excerpt_boundaries(self):
         self.note('Unicode', 'Vector Search ' + 'é' * 900 + '\nDelivered: 2025-09-14\n')
-        self.run_app('--root', str(self.root / 'Unicode'), 'Vector Search')
+        self.run_app('Vector Search')
 
     def test_search_output_limit_is_explicit(self):
         for index in range(16):

@@ -52,8 +52,8 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 - Dates require a valid calendar date plus a matching quote from the supplied notes or path. Supported evidence formats include `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, U.S. `MM/DD/YYYY`, and English month names with a four-digit year. File modification times are not used. A result with an evidenced delivery date after today is excluded entirely; today's deliveries are accepted. Today is captured once per verification using the system clock and local timezone (including `TZ`, if set), and is also supplied to the LLM. Dates without valid matching evidence remain `Unknown`.
 - Retrieval uses `--no-ignore`, so `.gitignore`, `.ignore`, and other ignore-file rules do not silently exclude ordinary notes. Hidden files/folders, binary files, and symlinks retain ripgrep's normal exclusions. Text in any ordinary file extension can match; PDFs and slides are not text-extracted. Queries cannot retrieve synonyms that share no literal query words.
 - Ripgrep uses `--sort path` for deterministic file order. On an unchanged tree, output-limit truncation retains the same prefix; timing-based cutoffs and concurrent filesystem changes can still vary coverage. Sorted traversal can be slower than parallel unsorted search.
-- Candidate selection is bounded and lexical, so the newest session may be omitted before LLM processing. Newest-first ordering applies to verified candidates, not every session on disk. Local selection does not promote folders based on unverified dates; narrow `--root`, refine the topic, or increase `--candidates` when needed. A warning calls out the recency limitation when the candidate limit is reached.
-- The notes layout is `SEARCH_ROOT/customer/date/documents`, including nested document subfolders. All documents under one customer/date boundary form one candidate; dates are not inferred from that grouping. When `--root` narrows within the configured SEARCH_ROOT, the anchor stays fixed, but returned folders stay within `--root`. Flat folders without that layout fall back to their containing folder. If several deliveries share one session directory, the LLM is instructed to select its newest evidenced on-topic delivery on or before today, preferring dated on-topic sessions to undated ones. It returns a peripheral session only if none are on-topic. At most one result is returned per session boundary. LLM interpretations of relevance, customer, subject, and delivery context can still be wrong.
+- Candidate selection is bounded and lexical, so the newest session may be omitted before LLM processing. Newest-first ordering applies to verified candidates, not every session on disk. Local selection does not promote folders based on unverified dates; refine the topic or increase `--candidates` when needed. A warning calls out the recency limitation when the candidate limit is reached.
+- The notes layout is `Customers/customer/date/documents`, including nested document subfolders. All documents under one customer/date boundary form one candidate; dates are not inferred from that grouping. The fixed Customers folder anchors this layout. Flat folders without that layout fall back to their containing folder. If several deliveries share one session directory, the LLM is instructed to select its newest evidenced on-topic delivery on or before today, preferring dated on-topic sessions to undated ones. It returns a peripheral session only if none are on-topic. At most one result is returned per session boundary. LLM interpretations of relevance, customer, subject, and delivery context can still be wrong.
 - Relevance 2 (substantially related) and 3 (direct) form one on-topic group, sorted by validated date newest first, with unknown dates last. Relevance 1 (peripheral) is retained after that entire group and sorted the same way. Remaining ties use relevance, local search score, and original candidate order, in that sequence. Thus an unknown-dated on-topic session still appears before a dated peripheral session. The on-topic threshold lives in the named `on_topic()` function.
 - Folder-opening prompts are skipped when stdin is not a terminal or `--no-open` is supplied.
 
@@ -91,13 +91,13 @@ To build without the Python test dependency, add `-DBUILD_TESTING=OFF` to the co
 
 ### Configuration
 
-The fallback search root is the exact fixed path `/home/barry/GoogleDrive/Builder Relations/Customers/`. It is not derived from `$HOME`, the working directory, or another environment value. An explicitly supplied `SEARCH_ROOT` or `--root` overrides it.
+Searches are restricted to the exact fixed folder `/home/barry/GoogleDrive/Builder Relations/Customers/`. It is not derived from `$HOME`, the working directory, or another environment value. `--root` is rejected. A legacy `SEARCH_ROOT` setting is accepted only when it exactly equals that literal (including the trailing slash); it never routes searches. Other values, including empty values, fail before searching or making an API request. You may launch bfind from any working directory.
 
 The default configuration file is `$XDG_CONFIG_HOME/bfind/.env` when `XDG_CONFIG_HOME` is an absolute path; otherwise it is `$HOME/.config/bfind/.env`. Empty or relative `XDG_CONFIG_HOME` values are ignored. `HOME` must be absolute when used as the fallback. If neither variable supplies a valid base directory, use `--env FILE` or correct the environment.
 
 Create a private configuration file at that location using `.env.example` as the template, then fill in the connection details. Never overwrite an existing configuration during setup. A missing config file is allowed: environment variables or `--local-only` may be sufficient.
 
-`./.env` is never loaded implicitly. To use a trusted file elsewhere, pass `--env FILE` explicitly; a relative path is resolved against your current directory. Only select files you trust, because configuration controls both the API destination and the search root.
+`./.env` is never loaded implicitly. To use a trusted file elsewhere, pass `--env FILE` explicitly; a relative path is resolved against your current directory. Only select files you trust, because configuration controls the API destination.
 
 #### One-time migration from the project `.env`
 
@@ -124,9 +124,8 @@ If `XDG_CONFIG_HOME` is set to an absolute path, use `$XDG_CONFIG_HOME/bfind` in
 | `LLM_API_KEY` | Company-provided Grove API key, sent in the `api-key` header. |
 | `LLM_BASE_URL` | Complete Grove HTTPS Chat Completions endpoint, including `/chat/completions`; used directly. |
 | `LLM_MODEL` | Model identifier; use `gpt-6-astra`. |
-| `SEARCH_ROOT` | Notes directory; the fallback is `/home/barry/GoogleDrive/Builder Relations/Customers/`. |
 
-Configuration supports `NAME=value`, single- or double-quoted values, optional `export`, and comments. Quoted values are literal: shell expansion and escape substitution are not performed. Environment variables override config-file values individually; `--root` overrides `SEARCH_ROOT`. API settings are required only for LLM requests, not local searches with no matches or `--local-only`.
+Configuration supports `NAME=value`, single- or double-quoted values, optional `export`, and comments. Quoted values are literal: shell expansion and escape substitution are not performed. Environment variables override API config-file values individually. Search location is not configurable. API settings are required only for LLM requests, not local searches with no matches or `--local-only`.
 
 The application checks the opened file with `fstat()` and reads that same descriptor. It prints a one-line warning to stderr if any group/other permission bits are set or the file is not owned by the effective current user, then continues. Use a user-owned file with mode `0600`. Symlinks are checked against their opened target; nonregular files are rejected. Warnings include no credentials, endpoint values, or config paths. These warnings are advisory; they do not establish that a file or endpoint is trusted.
 
@@ -141,7 +140,7 @@ From the repository directory, using configuration at the default user location 
 ```sh
 ./build/bfind "vector search"
 ./build/bfind --no-open --limit 5 "aggregation workshop"
-./build/bfind --root "/path/to/customer/notes" "schema design"
+./build/bfind "schema design"
 ```
 
 Check model access without sending notes:
@@ -173,7 +172,7 @@ The CLI exits with code 0 for successful searches (including no matches) and cod
 
 ### Development and documentation maintenance
 
-Offline integration tests use real ripgrep, synthetic notes, and mocked curl and Dolphin processes. They require no credentials or network connection.
+Offline integration tests use real ripgrep, synthetic notes, and mocked curl and Dolphin processes. They require no credentials or network connection. A separate, non-installed `bfind-fixture` target has a compile-time fixed folder under `build/` so tests never search real customer notes. It has no runtime root override; the production target always uses the exact customer folder. Tests also verify override rejection against the production executable.
 
 Keep this file, `AGENTS.md`, and `PROJECT_STATUS.md` synchronized with changes. Keep progress, readiness, verification results, and outstanding work in `PROJECT_STATUS.md`. Keep the opening README sections focused on functional needs and benefits, with architecture, decisions, configuration, and build and run instructions below.
 
