@@ -74,4 +74,4 @@ Keep this file, `AGENTS.md`, and `PROJECT_STATUS.md` synchronized with the progr
 
 Keep the opening sections focused on functional needs and user benefits. Place architecture, technical decisions, configuration, and build and run instructions in the lower technical portion.
 
-Commit each completed logical change after appropriate verification, keeping commits small and focused for fine-grained change control. Include related documentation updates in the same commit. Push commits when requested.
+Commit each completed logical change after appropriate verification, keeping commits small and focused for fine-grained change control. Include related documentation updates in the same commit. Push changes to `origin` before ending each interaction; no separate push request is required. Interactions without file changes do not require empty commits, but any pending local commits should be pushed.

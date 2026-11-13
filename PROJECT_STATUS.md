@@ -9,7 +9,8 @@ The project is in initial setup. Configuration templates and documentation exist
 - Initialized the local Git repository and configured the supplied GitHub repository as `origin`.
 - Added `.env.example` and Git ignore rules that exclude the local `.env` and build directory.
 - Added functional and technical documentation in `README.md` and contributor instructions in `AGENTS.md`.
-- Established small, focused commits after each completed logical change, with related documentation updates included.
+- Established small, focused commits after each completed logical change, with related documentation updates included, and automatic pushes to `origin` before ending each interaction.
+- Published the initial setup and documentation commits to `origin/main`.
 
 ## Verification completed
 

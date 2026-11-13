@@ -2,7 +2,7 @@
 
 ## Change control
 
-After each completed logical change, commit it to the repository to provide fine-grained change control. Keep commits small and focused, include corresponding documentation updates, and run appropriate verification before committing. Do not accumulate unrelated changes into a single commit. Never include `.env` or credentials in a commit. Push commits only when requested by the user.
+After each completed logical change, commit it to the repository to provide fine-grained change control. Keep commits small and focused, include corresponding documentation updates, and run appropriate verification before committing. Do not accumulate unrelated changes into a single commit. Never include `.env` or credentials in a commit. For every interaction that changes repository files, commit the changes and push them to `origin` before ending the interaction; no separate push request is required. For interactions without changes, do not create empty commits, but push any pending local commits. Report any commit or push failure explicitly.
 
 ## Documentation maintenance
 
