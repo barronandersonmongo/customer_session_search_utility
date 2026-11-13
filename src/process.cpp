@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <stdexcept>
 #include <fcntl.h>
 #include <poll.h>
@@ -11,7 +12,20 @@
 
 // All child input travels through a pipe. Never invoke a shell or expose secrets in argv.
 ProcessResult process(const std::vector<std::string>& args, const std::string& input,
-                      size_t limit, int seconds) {
+                      size_t limit, int seconds, ChildEnvironment environment) {
+    std::vector<std::string> env_strings;
+    std::vector<char*> envp;
+    if (environment == ChildEnvironment::Curl) {
+        // Preserve the user's company proxy/CA setup, but no application credentials,
+        // TLS key logging, dynamic-loader settings, or unrelated environment variables.
+        for (const char* name : {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+                                "http_proxy", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY",
+                                "no_proxy", "NO_PROXY", "CURL_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR",
+                                "CURL_SSL_BACKEND"})
+            if (const char* value = std::getenv(name)) env_strings.emplace_back(std::string(name) + "=" + value);
+        for (auto& entry : env_strings) envp.push_back(entry.data());
+        envp.push_back(nullptr);
+    }
     int in[2], out[2];
     if (pipe(in) != 0) throw std::runtime_error("Cannot create process pipe.");
     if (pipe(out) != 0) { close(in[0]); close(in[1]); throw std::runtime_error("Cannot create process pipe."); }
@@ -29,7 +43,8 @@ ProcessResult process(const std::vector<std::string>& args, const std::string& i
         std::vector<char*> argv;
         for (const auto& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));
         argv.push_back(nullptr);
-        execvp(argv[0], argv.data());
+        if (environment == ChildEnvironment::Curl) execvpe(argv[0], argv.data(), envp.data());
+        else execvp(argv[0], argv.data());
         _exit(127);
     }
     close(in[0]); close(out[1]);

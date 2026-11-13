@@ -25,9 +25,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 90 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 91 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Curl TLS/environment hardening: build and all three suites passed (90 integration passes, one root-only skip, plus native suites). Every mocked API request asserts --tlsv1.2. Integration/native checks confirm preserved synthetic proxy/CA settings, excluded SSLKEYLOGFILE/API credentials/unrelated variables, and an unchanged parent environment. Synthetic mock controls now use temporary test-only state rather than production environment exceptions. No live API call or real `.env` access.
 
 - Terminal hardening: configure/build and all three suites passed (89 integration passes, one root-only skip, plus native Unicode and process suites). Native cases cover C1, bidi controls, Unicode separators, invalid/overlong/surrogate/out-of-range/truncated UTF-8, and preserved international text. Integration cases verify escaped model fields and folder display without renaming. No usage audit was added, per the user.
 
@@ -98,4 +100,4 @@ Metadata inspection confirmed customer/year/dated-topic/document folders, potent
 
 ## Hardening decisions
 
-The user declined any usage audit or persistent usage log. Existing proxy and custom CA settings must be preserved because company requirements are unknown. Curl will be given an explicit environment policy while Dolphin retains desktop integration. The folder canonicalization-to-launch swap race remains a low-priority residual risk; no claim is made that a second path check eliminates it.
+The user declined any usage audit or persistent usage log. Existing proxy and custom CA settings must be preserved because company requirements are unknown. Curl now uses an explicit environment allowlist and a TLS 1.2 minimum; proxy/CA settings remain trusted inputs, TLS key logging and unrelated credentials are excluded, and Dolphin retains desktop integration. The folder canonicalization-to-launch swap race remains a low-priority residual risk; no claim is made that a second path check eliminates it.

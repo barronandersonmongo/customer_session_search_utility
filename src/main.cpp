@@ -234,8 +234,8 @@ std::string api(const std::map<std::string, std::string>& cfg, const json::array
     if (structured) request["response_format"] = json::object{{"type", "json_object"}};
     std::string input = "url = " + config_quote(endpoint) + "\nheader = " + config_quote("api-key: " + key)
         + "\nheader = \"Content-Type: application/json\"\ndata-binary = " + config_quote(json::serialize(request)) + "\n";
-    auto response = process({"curl", "--disable", "--config", "-", "--silent", "--show-error", "--proto", "=https",
-                             "--connect-timeout", "10", "--max-time", "55", "--write-out", "\n%{http_code}"}, input, 1024 * 1024, 60);
+    auto response = process({"curl", "--disable", "--config", "-", "--silent", "--show-error", "--proto", "=https", "--tlsv1.2",
+                             "--connect-timeout", "10", "--max-time", "55", "--write-out", "\n%{http_code}"}, input, 1024 * 1024, 60, ChildEnvironment::Curl);
     if (response.limited) throw std::runtime_error("Grove response exceeded the 1 MiB limit; no partial response was accepted.");
     if (response.code == 127) throw std::runtime_error("curl is required but was not found in PATH.");
     if (response.timed_out || response.code == 28) throw std::runtime_error("Grove request timed out; no partial response was accepted.");

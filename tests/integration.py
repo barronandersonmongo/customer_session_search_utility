@@ -23,6 +23,12 @@ LOCKED_ROOT = '/home/barry/GoogleDrive/Builder Relations/Customers/'
 MOCK_CURL = r'''
 import datetime, json, os, sys
 from pathlib import Path
+state = json.loads(Path(TEST_STATE_FILE).read_text())
+assert '--tlsv1.2' in sys.argv
+if 'EXPECT_CURL_ENV' in state:
+    for key, value in json.loads(state['EXPECT_CURL_ENV']).items():
+        assert os.environ.get(key) == value
+    assert all(key not in os.environ for key in ('SSLKEYLOGFILE', 'LLM_API_KEY', 'UNRELATED_SECRET'))
 config = {}
 for line in sys.stdin.read().splitlines():
     key, value = line.split(' = ', 1)
@@ -32,11 +38,11 @@ assert 'api-key: synthetic-secret' in config['header']
 assert 'synthetic-secret' not in ' '.join(sys.argv)
 request = json.loads(config['data-binary'][0])
 assert request['model'] == 'gpt-6-astra'
-mode = os.environ.get('TEST_MODE', '')
-Path(os.environ['MOCK_CALLED']).write_text('called')
-if 'TEST_CURL_EXIT' in os.environ:
+mode = state.get('TEST_MODE', '')
+Path(state['MOCK_CALLED']).write_text('called')
+if 'TEST_CURL_EXIT' in state:
     print('synthetic-secret https://private.invalid request-text-private', file=sys.stderr)
-    sys.exit(int(os.environ['TEST_CURL_EXIT']))
+    sys.exit(int(state['TEST_CURL_EXIT']))
 if mode == 'oversized-response':
     print('sensitive-response' * 80000, end='', flush=True)
     sys.exit(0)
@@ -51,15 +57,15 @@ else:
     context = json.loads(request['messages'][1]['content'])
     assert context['as_of_date'] == datetime.date.today().isoformat()
     candidates = context['candidates']
-    assert len(candidates) <= int(os.environ.get('EXPECTED_CANDIDATES', '40'))
-    if 'EXPECTED_EXACT_CANDIDATES' in os.environ:
-        assert len(candidates) == int(os.environ['EXPECTED_EXACT_CANDIDATES'])
+    assert len(candidates) <= int(state.get('EXPECTED_CANDIDATES', '40'))
+    if 'EXPECTED_EXACT_CANDIDATES' in state:
+        assert len(candidates) == int(state['EXPECTED_EXACT_CANDIDATES'])
     assert all(len(c['excerpts'].encode()) <= 3000 for c in candidates)
-    if 'LEGACY_MARKERS' in os.environ:
-        markers = json.loads(os.environ['LEGACY_MARKERS'])
+    if 'LEGACY_MARKERS' in state:
+        markers = json.loads(state['LEGACY_MARKERS'])
         assert all(sum(marker in c['excerpts'] for marker in markers) == 1 for c in candidates)
     for c in candidates:
-        for text in json.loads(os.environ.get('EXPECTED_EXCERPT_TEXT', '{}')).get(Path(c['folder']).name, []):
+        for text in json.loads(state.get('EXPECTED_EXCERPT_TEXT', '{}')).get(Path(c['folder']).name, []):
             assert text in c['excerpts']
     results = []
     for c in candidates:
@@ -69,7 +75,7 @@ else:
                             date_evidence=date, subject='Vector Search Workshop',
                             relevance=2 if 'Related' in folder else 3))
     for result in results:
-        result.update(json.loads(os.environ.get('TEST_RESULTS', '{}')).get(result['customer'], {}))
+        result.update(json.loads(state.get('TEST_RESULTS', '{}')).get(result['customer'], {}))
     if mode == 'reverse': results.reverse()
     if mode == 'bad-id': results[0]['id'] = 99999
     if mode == 'bad-relevance': results[0]['relevance'] = 4
@@ -109,7 +115,8 @@ class Integration(unittest.TestCase):
         self.bin = self.base / 'bin'
         self.bin.mkdir()
         curl = self.bin / 'curl'
-        curl.write_text('#!' + sys.executable + '\n' + MOCK_CURL)
+        self.curl_state = self.base / 'curl-state.json'
+        curl.write_text('#!' + sys.executable + '\nTEST_STATE_FILE = ' + repr(str(self.curl_state)) + '\n' + MOCK_CURL)
         curl.chmod(0o755)
         dolphin = self.bin / 'dolphin'
         dolphin.write_text('#!' + sys.executable + '\nimport json, os, sys\nfrom pathlib import Path\nPath(os.environ["MOCK_OPENED"]).write_text(json.dumps(sys.argv[1:]))\n')
@@ -125,6 +132,7 @@ class Integration(unittest.TestCase):
                                'LLM_BASE_URL=https://example.invalid/chat/completions\n'
                                'LLM_MODEL=gpt-6-astra\n')
         self.config.chmod(0o600)
+        self.write_curl_state(self.env)
         self.note('Old', 'Customer: Old\nDelivered: 2025-09-14\nSubject: Vector Search Workshop\n')
         self.note('Recent', 'Customer: Recent\nDelivered: 2026-10-22\nSubject: Vector Search Workshop\n')
         self.note('Related', 'Delivered: 2026-10-22\nSubstantially related Vector Search session materials.\n')
@@ -135,8 +143,14 @@ class Integration(unittest.TestCase):
         (p / name).write_text(content)
         return p
 
+    def write_curl_state(self, env):
+        names = ('MOCK_CALLED', 'TEST_MODE', 'TEST_RESULTS', 'TEST_CURL_EXIT', 'EXPECTED_CANDIDATES',
+                 'EXPECTED_EXACT_CANDIDATES', 'EXPECTED_EXCERPT_TEXT', 'LEGACY_MARKERS', 'EXPECT_CURL_ENV')
+        self.curl_state.write_text(json.dumps({key: env[key] for key in names if key in env}))
+
     def run_app(self, *args, mode='', success=True, timeout=15):
         env = dict(self.env, TEST_MODE=mode)
+        self.write_curl_state(env)
         result = subprocess.run([BINARY, '--env', str(self.config), '--no-open', *args],
                                 env=env, cwd=self.base, text=True, capture_output=True, timeout=timeout)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
@@ -535,6 +549,16 @@ class Integration(unittest.TestCase):
         self.assertIn('Grove request timed out', result.stderr)
         self.assertNotIn('1. ', result.stdout)
 
+    def test_curl_environment_preserves_company_settings_and_removes_secrets(self):
+        expected = {'https_proxy': 'http://synthetic-proxy.invalid', 'ALL_PROXY': 'http://synthetic-all.invalid',
+                    'NO_PROXY': 'example.invalid', 'CURL_CA_BUNDLE': '/synthetic/company-ca.pem',
+                    'SSL_CERT_FILE': '/synthetic/ca.pem', 'SSL_CERT_DIR': '/synthetic/certs'}
+        self.env.update(expected)
+        self.env.update(SSLKEYLOGFILE=str(self.base / 'tls-keys'), LLM_API_KEY='synthetic-secret',
+                        UNRELATED_SECRET='synthetic-other', EXPECT_CURL_ENV=json.dumps(expected))
+        self.run_app('--check-connection')
+        self.assertFalse((self.base / 'tls-keys').exists())
+
     def test_curl_exit_codes_have_safe_specific_errors(self):
         messages = {5: 'could not resolve proxy', 6: 'could not resolve API host',
                     7: 'could not connect', 28: 'timed out', 35: 'TLS handshake failed',
@@ -587,6 +611,7 @@ class Integration(unittest.TestCase):
         return target
 
     def run_default(self, *args, success=True):
+        self.write_curl_state(self.env)
         result = subprocess.run([BINARY, '--no-open', *args], env=self.env, cwd=self.base,
                                 text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
@@ -687,7 +712,7 @@ class Integration(unittest.TestCase):
         self.run_app('Vector Search')
         after = {str(p): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
         self.assertEqual(before, after)
-        self.assertEqual(set(p.name for p in self.base.iterdir()), {'bin', 'settings.env', 'called'})
+        self.assertEqual(set(p.name for p in self.base.iterdir()), {'bin', 'settings.env', 'called', 'curl-state.json'})
 
     def test_noninteractive_input_never_prompts(self):
         result = subprocess.run([BINARY, '--env', str(self.config), 'Vector Search'],
@@ -772,6 +797,7 @@ class Integration(unittest.TestCase):
         self.assertIn('partial candidate excerpts; coverage is incomplete', result.stdout)
 
     def interact(self, answer, expect_code=0, expect_open=True):
+        self.write_curl_state(self.env)
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
         p = subprocess.Popen([BINARY, '--env', str(self.config), 'Vector Search'],
@@ -835,7 +861,7 @@ class Integration(unittest.TestCase):
         self.env['SIGNAL_MASK_FILE'] = str(mask)
         executable.write_text('#!/bin/sh\nwhile read -r name value rest; do\n'
                               '  if [ "$name" = "SigIgn:" ]; then\n'
-                              '    printf "%s\\n" "$value" > "$SIGNAL_MASK_FILE"\n'
+                              '    printf "%s\\n" "$value" > ' + shlex.quote(str(mask)) + '\n'
                               '    break\n  fi\ndone < "/proc/$$/status"\n' +
                               'exec ' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(body)) + ' "$@"\n')
         executable.chmod(0o755)

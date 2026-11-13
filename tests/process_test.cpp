@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -13,6 +14,12 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "curl-environment") {
+        if (std::getenv("SSLKEYLOGFILE") || std::getenv("LLM_API_KEY") || std::getenv("UNRELATED_SECRET")) return 1;
+        const char* proxy = std::getenv("https_proxy");
+        const char* ca = std::getenv("SSL_CERT_FILE");
+        return proxy && std::string(proxy) == "http://synthetic.invalid" && ca && std::string(ca) == "/synthetic/ca.pem" ? 0 : 1;
+    }
     if (argc == 2 && std::string(argv[1]) == "sigpipe-default") {
         struct sigaction disposition{};
         return sigaction(SIGPIPE, nullptr, &disposition) == 0 && disposition.sa_handler == SIG_DFL ? 0 : 1;
@@ -27,6 +34,14 @@ int main(int argc, char** argv) {
     }
     try {
         const auto self = std::filesystem::canonical(argv[0]).string();
+        setenv("SSLKEYLOGFILE", "/synthetic/never-created", 1);
+        setenv("LLM_API_KEY", "synthetic-key", 1);
+        setenv("UNRELATED_SECRET", "synthetic-secret", 1);
+        setenv("https_proxy", "http://synthetic.invalid", 1);
+        setenv("SSL_CERT_FILE", "/synthetic/ca.pem", 1);
+        require(process({self, "curl-environment"}, "", 1024, 1, ChildEnvironment::Curl).code == 0,
+                "Curl environment policy failed.");
+        require(std::getenv("SSLKEYLOGFILE") != nullptr, "Parent environment changed.");
         require(process({self, "sigpipe-default"}, "", 1024, 1).code == 0, "Child inherited ignored SIGPIPE.");
         struct sigaction disposition{};
         require(sigaction(SIGPIPE, nullptr, &disposition) == 0 && disposition.sa_handler == SIG_IGN,
