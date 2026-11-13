@@ -38,9 +38,14 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 
 ## Development and verification
 
+- Build with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` and `cmake --build build -j2`; run offline checks with `ctest --test-dir build --output-on-failure`.
+- The implementation targets Linux and C++17, uses Boost.JSON headers with the bundled implementation, and invokes installed `rg` and `curl` executables directly. Python 3 is a test dependency; Dolphin is optional at runtime.
+- Keep credentials and API request bodies on stdin to curl, never in process arguments or temporary files. Preserve HTTPS-only transport, disabled curl user configuration, and no redirects.
+- Preserve bounded retrieval and request sizes. Keep the README's limit values and configuration precedence accurate when changing them.
+- Validate result IDs against local candidates, reject duplicate IDs and incomplete completions, and require a valid calendar date supported by a matching source quote. Use `Unknown` when date evidence is unsupported.
+- Dolphin launches independently of the CLI. Do not wait for its GUI lifetime or kill it on a request timeout. Prompt only when stdin is interactive, unless `--no-open` suppresses it.
+- Use `--check-connection` for a minimal live API check without notes, and `--local-only` to inspect unverified local matches without calling the LLM.
 - Consult `PROJECT_STATUS.md` for current implementation readiness and completed verification. Update it as work progresses.
-- Document the actual required language standard and dependencies when adding the build system.
-- Add accurate build and usage commands to the README with the initial implementation.
 - Run verification appropriate to each change. For substantive retrieval, parsing, ranking, or process-launch behavior, cover meaningful edge cases using synthetic notes and mocked LLM responses where practical.
 - Use minimal live API requests only when needed to verify the connection or integration; avoid sending customer notes solely for a connectivity check.
 - Preserve the existing local `.env` and keep it Git-ignored. Never inspect secrets by dumping the file into tool output.
