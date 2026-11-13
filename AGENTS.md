@@ -58,6 +58,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Keep credentials and API request bodies on stdin to curl, never in process arguments or temporary files. Preserve HTTPS-only transport, disabled curl user configuration, and no redirects.
 - Preserve bounded retrieval and request sizes. Keep the README's limit values and configuration precedence accurate when changing them.
 - Validate result IDs against local candidates, reject duplicate IDs and incomplete completions, and require a valid calendar date supported by a matching source quote. Use `Unknown` when date evidence is unsupported.
+- Tolerate absent/null/non-string optional text fields as Unknown or empty evidence. Skip items with oversized customer/subject strings with one stderr count; fail if all items are oversized. Non-object items and invalid ID/relevance/duplicates remain fatal. Preserve successful empty results when all usable items are excluded future deliveries.
 - Dolphin launches independently of the CLI. Do not wait for its GUI lifetime or kill it on a request timeout. Prompt only when stdin is interactive, unless `--no-open` suppresses it.
 - Use `--check-connection` for a minimal live API check without notes, and `--local-only` to inspect unverified local matches without calling the LLM.
 - Consult `PROJECT_STATUS.md` for current implementation readiness and completed verification. Update it as work progresses.

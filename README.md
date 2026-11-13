@@ -56,6 +56,8 @@ Repository: [customer_session_search_utility](https://github.com/barronandersonm
 
 ### Limits of verification
 
+Missing, null, or non-string customer/subject/date fields are treated as unknown, and unusable date evidence becomes empty. A customer over 200 bytes or subject over 300 bytes skips only that item with one stderr count; if every item is oversized, the response fails. Non-object items, invalid IDs or relevance, and duplicate IDs still reject the whole response. A response containing only evidenced future deliveries is a successful empty result.
+
 After an LLM search returns results, a short stderr notice reminds you to check the customer, delivery date, and subject in the folder before relying on them. It does not appear for local-only searches, empty results, or connection checks, and the stdout result list is unchanged.
 
 Local checks validate candidate IDs, relevance ranges, calendar dates, and matching date evidence; they do not authenticate what the notes claim. Customer and subject are not independently verified against excerpts. A convincing planted note with a forged past delivery date can still mislead the model and rank highly. Matching evidence proves that the source contains a date, not that a delivery happened.

@@ -453,9 +453,15 @@ Order does not matter; the application ranks results.)";
     auto content = api(cfg, json::array{json::object{{"role","system"},{"content",instructions}},
                                       json::object{{"role","user"},{"content",json::serialize(context)}}}, kSearchCompletionTokens, true);
     std::vector<Result> results; std::set<size_t> ids;
+    size_t oversized = 0;
     try {
         auto parsed = json::parse(content);
-        for (const auto& value : parsed.at("results").as_array()) {
+        const auto& items = parsed.at("results").as_array();
+        auto text = [](const json::object& item, const char* key) -> std::string {
+            const auto* field = item.if_contains(key);
+            return field && field->is_string() ? std::string(field->as_string()) : "";
+        };
+        for (const auto& value : items) {
             const auto& item = value.as_object();
             auto raw_id = item.at("id").as_int64();
             auto relevance = item.at("relevance").as_int64();
@@ -463,9 +469,9 @@ Order does not matter; the application ranks results.)";
                 throw std::runtime_error("Invalid result identifier or relevance.");
             size_t id = static_cast<size_t>(raw_id - 1);
             if (!ids.insert(id).second) throw std::runtime_error("Duplicate result identifier.");
-            std::string customer(item.at("customer").as_string()), subject(item.at("subject").as_string());
-            if (customer.size() > 200 || subject.size() > 300) throw std::runtime_error("Result field too long.");
-            std::string date(item.at("date").as_string()), evidence(item.at("date_evidence").as_string());
+            std::string customer = text(item, "customer"), subject = text(item, "subject");
+            if (customer.size() > 200 || subject.size() > 300) { ++oversized; continue; }
+            std::string date = text(item, "date"), evidence = text(item, "date_evidence");
             std::string source = candidates[id].folder.string() + '\n' + candidates[id].excerpt;
             if (evidence.empty() || evidence.size() > 1000 || source.find(evidence) == std::string::npos || !date_supported(date, evidence)) date = "Unknown";
             // Only compare a validated, evidenced ISO date. Missing/invalid evidence remains Unknown.
@@ -473,6 +479,9 @@ Order does not matter; the application ranks results.)";
             results.push_back({id, customer.empty() ? "Unknown" : clean(customer), date,
                                subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id])});
         }
+        if (oversized) std::cerr << "Skipped " << oversized << " model result(s) with oversized customer or subject fields.\n";
+        // Future-only results are a valid empty search; only oversized items were unusable here.
+        if (!items.empty() && oversized == items.size()) throw std::runtime_error("No usable items.");
     } catch (...) { throw std::runtime_error("LLM returned invalid session data; no results were accepted."); }
     std::sort(results.begin(), results.end(), [&](const Result& a, const Result& b) {
         if (on_topic(a) != on_topic(b)) return on_topic(a);

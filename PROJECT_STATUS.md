@@ -24,9 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 56 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 58 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Optional-field tolerance: build and CTest passed (57 passed, one root-only ownership test skipped). Null, missing, and wrong-type text fields retain their item as Unknown; oversized fields skip only that item with a count. Invalid IDs/relevance, duplicate IDs, and non-object items still reject the response. All-future results remain a successful empty result; all-oversized items fail. Synthetic tests only; no real `.env` access.
 
 - Completion-headroom change: configure/build and the offline suite passed (55 passed, one root-only ownership test skipped). Named caps are 16384 for searches and 2048 for connection checks; tests distinguish truncation, malformed envelopes, and other incomplete responses. No live request or real `.env` access was used.
 

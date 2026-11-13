@@ -53,6 +53,15 @@ else:
         result.update(json.loads(os.environ.get('TEST_RESULTS', '{}')).get(result['customer'], {}))
     if mode == 'reverse': results.reverse()
     if mode == 'bad-id': results[0]['id'] = 99999
+    if mode == 'bad-relevance': results[0]['relevance'] = 4
+    if mode in ('null-fields', 'missing-fields', 'wrong-fields'):
+        for field in ('customer', 'subject', 'date', 'date_evidence'):
+            if mode == 'missing-fields': results[0].pop(field)
+            else: results[0][field] = None if mode == 'null-fields' else ['not a string']
+    if mode == 'nonobject': results.append(None)
+    if mode == 'oversized': results[0]['customer'] = 'x' * 201
+    if mode == 'all-oversized':
+        for result in results: result['subject'] = 'x' * 301
     if mode == 'duplicate': results.append(results[0])
     if mode == 'bad-date': results[0]['date'] = '2026-02-30'
     if mode == 'no-evidence': results[0]['date_evidence'] = 'not supplied anywhere'
@@ -286,10 +295,26 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.base / 'called').exists())
 
     def test_invalid_model_output_fails_closed(self):
-        for mode in ('bad-id', 'duplicate', 'malformed', 'length'):
+        for mode in ('bad-id', 'bad-relevance', 'nonobject', 'duplicate', 'malformed', 'length'):
             with self.subTest(mode=mode):
                 result = self.run_app('Vector Search', mode=mode, success=False)
                 self.assertNotIn('1. ', result.stdout)
+
+    def test_optional_model_text_fields_are_tolerated(self):
+        for mode in ('null-fields', 'missing-fields', 'wrong-fields'):
+            with self.subTest(mode=mode):
+                result = self.run_app('Vector Search', mode=mode)
+                self.assertIn('Unknown | Unknown | Unknown', result.stdout)
+                self.assertEqual(result.stdout.count('\n   '), 3)
+
+    def test_oversized_fields_skip_only_the_item(self):
+        result = self.run_app('Vector Search', mode='oversized')
+        self.assertIn('Skipped 1 model result(s)', result.stderr)
+        self.assertEqual(result.stdout.count('\n   '), 2)
+        self.assertNotIn('x' * 201, result.stdout + result.stderr)
+        result = self.run_app('Vector Search', mode='all-oversized', success=False)
+        self.assertIn('Skipped 3 model result(s)', result.stderr)
+        self.assertIn('invalid session data', result.stderr)
 
     def test_unsupported_dates_are_unknown(self):
         for mode in ('bad-date', 'no-evidence', 'wrong-evidence'):
