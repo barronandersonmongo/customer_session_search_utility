@@ -30,9 +30,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 114 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 117 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Verbose match explanations: Release configure/build and all four suites passed (116 integration passes, one root-only ownership skip, plus native suites). Diagnostics map each displayed result to its source and show sanitized retained-note terms, missing terms, folder matches, exact-phrase checks, up to three matching filename/line references, score components, submitted-excerpt terms, and model/effective relevance with coverage-cap reporting. Tests cover partial-term versus phrase matches, ranked result mapping, coverage caps, and note-content redaction. Scoring, stdout, and request count remain unchanged. No real `.env`, customer-note contents, or live API calls were used. Private usage notes updated locally and remain ignored.
 
 - Immediate prompt quit: build, targeted pty checks, and all four suites passed (113 integration passes, one root-only skip, plus native suites). q/Q quits without newline; Enter default, invalid retries, multi-digit selection, and backspace remain supported. Pty checks assert exact terminal-attribute restoration after normal selections, quit, display-launch errors, and SIGINT. Pending interruption/termination/suspend signals are deferred briefly so attributes are restored before delivery, without installing global handlers. Manual suspend/resume and actual GUI launch were not exercised. Private usage notes updated locally and remain ignored; no real `.env`, real note contents, or live API calls.
 

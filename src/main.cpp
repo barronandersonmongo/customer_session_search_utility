@@ -297,7 +297,19 @@ struct Candidate {
     std::string excerpt;
     std::string reference_date;
     bool reference_year_only = false;
+    std::vector<std::string> note_terms, missing_note_terms, path_terms, submitted_terms;
+    std::vector<std::string> match_locations;
+    bool note_phrase = false, path_phrase = false;
+    int rarity_score = 0, phrase_score = 0, hit_score = 0;
 };
+std::string term_list(const std::vector<std::string>& terms) {
+    json::array values;
+    for (const auto& term : terms) {
+        const auto escaped = clean(term);
+        values.emplace_back(json::string_view(escaped.data(), escaped.size()));
+    }
+    return json::serialize(values);
+}
 struct DateWindow { std::string today, oldest; };
 std::string folder_year_start(const fs::path& folder, const fs::path& root);
 std::pair<std::string, bool> metadata_reference(const Candidate& candidate, const fs::path& root) {
@@ -351,6 +363,7 @@ std::vector<std::string> terms(const std::string& query) {
 struct Retrieval { std::vector<Candidate> candidates; bool partial; size_t excluded_dates = 0; };
 Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& progress, const DateWindow& window) {
     auto words = terms(opt.query);
+    progress.log("Match policy: ripgrep accepts any query term in note text; local scoring also considers folder names. An exact phrase is not required.");
     progress.log("Searching fixed customer folder with ripgrep: " + std::to_string(words.size()) +
                  " distinct search terms; " + std::to_string(opt.context) + " context lines; timeout 30s; output cap 16 MiB.");
     std::vector<std::string> args{"rg", "--no-config", "--no-ignore", "--json", "--sort", "path", "--ignore-case", "--fixed-strings", "--context", std::to_string(opt.context),
@@ -430,13 +443,32 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& pro
     std::vector<size_t> folder_frequency(words.size(), 0);
     for (auto& item : grouped) {
         auto& c = item.second;
-        std::string searchable = lower(c.folder.string());
-        for (const auto& file : c.lines) for (const auto& l : file.second) searchable += lower(l.second);
+        const std::string path_text = lower(c.folder.string());
+        std::string note_text;
+        for (const auto& file : c.lines) for (const auto& l : file.second) {
+            const std::string line = lower(l.second);
+            note_text += line;
+            if (opt.verbose && c.match_locations.size() < 3 &&
+                std::any_of(words.begin(), words.end(), [&](const std::string& term) { return line.find(term) != std::string::npos; }))
+                c.match_locations.push_back(file.first + ":" + std::to_string(l.first));
+        }
+        const std::string searchable = path_text + note_text;
+        if (opt.verbose) {
+            for (const auto& word : words) {
+                if (note_text.find(word) != std::string::npos) c.note_terms.push_back(word);
+                else c.missing_note_terms.push_back(word);
+                if (path_text.find(word) != std::string::npos) c.path_terms.push_back(word);
+            }
+            c.note_phrase = note_text.find(lower(opt.query)) != std::string::npos;
+            c.path_phrase = path_text.find(lower(opt.query)) != std::string::npos;
+        }
         for (size_t i = 0; i < words.size(); ++i) if (searchable.find(words[i]) != std::string::npos) {
             c.retrieval_terms.push_back(i);
             ++folder_frequency[i];
         }
-        c.score = (searchable.find(lower(opt.query)) != std::string::npos ? 50 : 0) + std::min(c.hits, 20);
+        c.phrase_score = searchable.find(lower(opt.query)) != std::string::npos ? 50 : 0;
+        c.hit_score = std::min(c.hits, 20);
+        c.score = c.phrase_score + c.hit_score;
         // Put actual matches before surrounding lines so the excerpt budget retains the topic.
         std::set<std::string> seen;
         std::string submitted_note_text;
@@ -456,13 +488,17 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& pro
         submitted_note_text = lower(submitted_note_text);
         c.query_term_count = static_cast<int>(words.size());
         for (const auto& word : words)
-            if (submitted_note_text.find(word) != std::string::npos) ++c.excerpt_term_coverage;
+            if (submitted_note_text.find(word) != std::string::npos) {
+                ++c.excerpt_term_coverage;
+                if (opt.verbose) c.submitted_terms.push_back(word);
+            }
         c.lines.clear();
         candidates.push_back(std::move(c));
     }
     for (auto& candidate : candidates) {
         for (size_t term : candidate.retrieval_terms)
-            candidate.score += 100 + static_cast<int>(900 * (candidates.size() - folder_frequency[term]) / candidates.size());
+            candidate.rarity_score += 100 + static_cast<int>(900 * (candidates.size() - folder_frequency[term]) / candidates.size());
+        candidate.score += candidate.rarity_score;
         candidate.retrieval_terms.clear();
     }
     std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
@@ -483,6 +519,10 @@ Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& pro
         if (i < 5) progress.log("Candidate " + std::to_string(i + 1) + ": score=" + std::to_string(candidate.score) +
                                ", excerpt term coverage=" + std::to_string(candidate.excerpt_term_coverage) + "/" +
                                std::to_string(candidate.query_term_count) + ", matches=" + std::to_string(candidate.hits) + ".");
+        if (opt.verbose && i < 5)
+            progress.log("Candidate " + std::to_string(i + 1) + " note terms=" + term_list(candidate.note_terms) +
+                         "; missing in notes=" + term_list(candidate.missing_note_terms) +
+                         "; exact phrase in notes=" + (candidate.note_phrase ? "yes"s : "no"s) + ".");
     }
     progress.log("Selected " + std::to_string(candidates.size()) + " candidates with " + std::to_string(excerpt_bytes) +
                  " excerpt bytes; coverage " + ((found.limited || found.timed_out || skipped_paths) ? "partial."s : "within configured retrieval limits."s));
@@ -510,7 +550,7 @@ bool date_supported(const std::string& date, const std::string& evidence) {
         if (std::stoi((*it)[1]) == day && std::stoi((*it)[2]) == year) return true;
     return false;
 }
-struct Result { size_t id; std::string customer, date, subject; int relevance; bool year_only = false; };
+struct Result { size_t id; std::string customer, date, subject; int relevance; bool year_only = false; int model_relevance = 0; };
 std::string customer_from_folder(const fs::path& folder, const fs::path& root) {
     auto relative = folder.lexically_relative(root);
     auto part = relative.begin();
@@ -618,7 +658,7 @@ Order does not matter; the application ranks results.)";
             if (year_only) ++year_references;
             if (cap_relevance(static_cast<int>(relevance), candidates[id]) != relevance) ++capped;
             results.push_back({id, customer_from_folder(candidates[id].folder, root), date,
-                               subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id]), year_only});
+                               subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id]), year_only, static_cast<int>(relevance)});
         }
         if (oversized) std::cerr << "Skipped " << oversized << " model result(s) with oversized subject fields.\n";
         // Future-only results are a valid empty search; only oversized items were unusable here.
@@ -641,6 +681,26 @@ Order does not matter; the application ranks results.)";
     });
     progress.log("Ranked accepted sessions by on-topic group, date/reference recency, relevance, and local score.");
     return results;
+}
+void explain_result(size_t position, const Result& result, const Candidate& candidate,
+                    bool local_only, const Progress& progress) {
+    const std::string label = "Result " + std::to_string(position) + " (candidate " + std::to_string(result.id + 1) + ")";
+    progress.log(label + ": source=" + clean(candidate.identity));
+    progress.log(label + " sample matching locations (up to 3)=" + term_list(candidate.match_locations) + ". Note contents omitted.");
+    progress.log(label + " retained note terms=" + term_list(candidate.note_terms) +
+                 "; missing in notes=" + term_list(candidate.missing_note_terms) +
+                 "; folder terms=" + term_list(candidate.path_terms) +
+                 "; exact phrase in notes=" + (candidate.note_phrase ? "yes"s : "no"s) +
+                 ", in folder=" + (candidate.path_phrase ? "yes"s : "no"s) + ".");
+    progress.log(label + " score=" + std::to_string(candidate.score) + " = rarity " + std::to_string(candidate.rarity_score) +
+                 " + phrase bonus " + std::to_string(candidate.phrase_score) + " + capped match bonus " + std::to_string(candidate.hit_score) +
+                 "; submitted excerpt terms=" + term_list(candidate.submitted_terms) + ".");
+    if (local_only) progress.log(label + " is an unverified local match, ordered by local score; no LLM topic assessment was performed.");
+    else progress.log(label + " LLM relevance=" + std::to_string(result.model_relevance) + " -> effective relevance=" +
+                      std::to_string(result.relevance) + (result.model_relevance != result.relevance ? " (coverage cap applied)" : "") +
+                      "; group=" + (on_topic(result) ? "on-topic"s : "peripheral"s) +
+                      "; date/reference=" + result.date + (result.year_only ? "*" : "") +
+                      ". Ordering: group, newest date, relevance, local score, candidate order.");
 }
 void open_folder(const std::vector<Result>& results, const std::vector<Candidate>& candidates, const fs::path& root) {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
@@ -708,6 +768,7 @@ int main(int argc, char** argv) {
         }
         for (size_t i = 0; i < results.size(); ++i) {
             const auto& r = results[i];
+            if (opt.verbose) explain_result(i + 1, r, candidates[r.id], opt.local, progress);
             std::cout << i + 1 << ". " << r.customer << " | " << r.date << (r.year_only ? "*" : "") << " | " << r.subject << '\n'
                       << "   " << clean(candidates[r.id].folder.string()) << "\n\n";
         }

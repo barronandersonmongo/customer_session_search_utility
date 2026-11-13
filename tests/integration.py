@@ -371,6 +371,34 @@ class Integration(unittest.TestCase):
         self.assertIn('1 future deliveries excluded', result.stderr)
         self.assertIn('1 unknown dates', result.stderr)
 
+    def test_verbose_explains_partial_terms_and_exact_phrase(self):
+        self.ranking_fixture([])
+        self.note('Partial', 'vector PRIVATE_NOTE_MARKER\n')
+        self.note('Separate', 'vector indexes\nsearch queries\n')
+        self.note('Exact', 'vector search workshop\n')
+        result = self.run_app('--verbose', '--local-only', 'vector search')
+        self.assertIn('retained note terms=["vector"]; missing in notes=["search"]', result.stderr)
+        self.assertIn('retained note terms=["vector","search"]; missing in notes=[]', result.stderr)
+        self.assertIn('exact phrase in notes=yes', result.stderr)
+        self.assertIn('exact phrase in notes=no', result.stderr)
+        self.assertIn('sample matching locations (up to 3)=["notes.txt:1"]', result.stderr)
+        self.assertIn('phrase bonus 50', result.stderr)
+        self.assertIn('is an unverified local match, ordered by local score', result.stderr)
+        self.assertNotIn('PRIVATE_NOTE_MARKER', result.stderr)
+
+    def test_verbose_maps_displayed_results_to_source_and_model_rating(self):
+        result = self.run_app('--verbose', 'Vector Search')
+        self.assertRegex(result.stderr, r'Result 1 \(candidate [0-9]+\): source=folder:.*Recent')
+        self.assertIn('LLM relevance=3 -> effective relevance=3; group=on-topic', result.stderr)
+        self.assertIn('LLM relevance=2 -> effective relevance=2; group=on-topic', result.stderr)
+        self.assertIn('Ordering: group, newest date', result.stderr)
+
+    def test_verbose_explains_coverage_cap(self):
+        self.coverage_fixture('alpha\n', 'alpha beta gamma\n')
+        result = self.run_app('--verbose', 'alpha beta gamma')
+        self.assertIn('LLM relevance=3 -> effective relevance=2 (coverage cap applied)', result.stderr)
+        self.assertIn('submitted excerpt terms=["alpha"]', result.stderr)
+
     def test_model_fields_escape_unicode_terminal_controls(self):
         self.env['TEST_RESULTS'] = json.dumps({'Recent': dict(customer='Café\u202e\u0085', subject='東京\u2066topic\u2069')})
         result = self.run_app('Vector Search')
