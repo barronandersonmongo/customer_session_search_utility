@@ -75,7 +75,31 @@ To build without the Python test dependency, add `-DBUILD_TESTING=OFF` to the co
 
 ### Configuration
 
-Copy `.env.example` to `.env` only if a local configuration does not already exist, then fill in the connection details. Never overwrite an existing `.env` during setup.
+The default configuration file is `$XDG_CONFIG_HOME/bfind/.env` when `XDG_CONFIG_HOME` is an absolute path; otherwise it is `$HOME/.config/bfind/.env`. Empty or relative `XDG_CONFIG_HOME` values are ignored. `HOME` must be absolute when used as the fallback. If neither variable supplies a valid base directory, use `--env FILE` or correct the environment.
+
+Create a private configuration file at that location using `.env.example` as the template, then fill in the connection details. Never overwrite an existing configuration during setup. A missing config file is allowed: environment variables or `--local-only` may be sufficient.
+
+`./.env` is never loaded implicitly. To use a trusted file elsewhere, pass `--env FILE` explicitly; a relative path is resolved against your current directory. Only select files you trust, because configuration controls both the API destination and the search root.
+
+#### One-time migration from the project `.env`
+
+You can continue using the existing project configuration explicitly:
+
+```sh
+./build/bfind --env .env "vector search"
+```
+
+Alternatively, from the project directory, copy it to the default location. For the HOME fallback:
+
+```sh
+mkdir -p "$HOME/.config/bfind"
+(umask 077; cp -n .env "$HOME/.config/bfind/.env")
+chmod 600 "$HOME/.config/bfind/.env"
+```
+
+If `XDG_CONFIG_HOME` is set to an absolute path, use `$XDG_CONFIG_HOME/bfind` instead of `$HOME/.config/bfind` in those commands. `cp -n` avoids replacing an existing destination. These steps are for you to run; the application never migrates or overwrites configuration automatically.
+
+#### Settings and precedence
 
 | Variable | Purpose |
 | --- | --- |
@@ -84,7 +108,9 @@ Copy `.env.example` to `.env` only if a local configuration does not already exi
 | `LLM_MODEL` | Model identifier; use `gpt-6-astra`. |
 | `SEARCH_ROOT` | Notes directory; the fallback is `/home/barry/GoogleDrive/Builder Relations/Customers/`. |
 
-Configuration supports `NAME=value`, single- or double-quoted values, optional `export`, and comments. Quoted values are literal: shell expansion and escape substitution are not performed. Environment variables override `.env` values; `--root` overrides `SEARCH_ROOT`. The default configuration file is `.env` in the current working directory; use `--env` when launching elsewhere. API settings are required only for LLM requests, not local searches with no matches or `--local-only`.
+Configuration supports `NAME=value`, single- or double-quoted values, optional `export`, and comments. Quoted values are literal: shell expansion and escape substitution are not performed. Environment variables override config-file values individually; `--root` overrides `SEARCH_ROOT`. API settings are required only for LLM requests, not local searches with no matches or `--local-only`.
+
+The application checks the opened file with `fstat()` and reads that same descriptor. It prints a one-line warning to stderr if any group/other permission bits are set or the file is not owned by the effective current user, then continues. Use a user-owned file with mode `0600`. Symlinks are checked against their opened target; nonregular files are rejected. Warnings include no credentials, endpoint values, or config paths. These warnings are advisory; they do not establish that a file or endpoint is trusted.
 
 Grove receives OpenAI-style requests with `model`, `messages`, and `max_completion_tokens`. Extraction requests also set `response_format` to `json_object`; text is read from `choices[0].message.content`. Responses with an incomplete finish reason or invalid result IDs are rejected. Unsupported date evidence becomes `Unknown`.
 
@@ -92,7 +118,7 @@ Grove receives OpenAI-style requests with `model`, `messages`, and `max_completi
 
 ### Run
 
-From the repository directory, using your `.env`:
+From the repository directory, using configuration at the default user location (or environment variables):
 
 ```sh
 ./build/bfind "vector search"
@@ -115,7 +141,7 @@ Inspect unverified local matches without an API call:
 Additional options:
 
 ```text
---env FILE       Configuration file (default: .env in current directory)
+--env FILE       Explicit trusted config file (default: XDG/HOME user config)
 --limit N        Maximum displayed results (default 10, maximum 30)
 --candidates N   Maximum folders sent to the LLM (default 20, maximum 40)
 --context N      Surrounding lines per match (default 6, maximum 30)

@@ -17,23 +17,29 @@ The initial C++ command-line application is implemented and builds successfully.
 - Implemented relevance and recency sorting, condensed numbered output, unknown fields, and result limits.
 - Implemented Dolphin selection with result 1 as default, input validation, quitting, and noninteractive prompt suppression. Dolphin launches independently of the CLI.
 - Added `--local-only`, `--check-connection`, configurable search roots, request limits, and CLI help.
-- Added 21 offline integration tests using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
+- Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
+- Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
+- Added 34 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
 
 - GCC 15.2.0 builds the C++17 application through CMake with `-Wall -Wextra -Wpedantic` and no reported warnings.
-- `ctest --test-dir build --output-on-failure` passes all 21 offline integration cases against the renamed `bfind` executable. CLI help also displays `bfind`. These cover grouping, ranking, date evidence, malformed output, HTTP errors, literal argument handling, configuration precedence, candidate/excerpt limits, UTF-8 boundaries, search-output truncation, noninteractive use, no persistent results, and Dolphin prompt behavior.
+- `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build -j2`, and `ctest --test-dir build --output-on-failure` completed successfully after the config change. Of 34 integration cases, 33 passed and the synthetic ownership-change case was skipped because it requires root. CLI help describes the new defaults.
+- New cases cover hostile cwd `.env` isolation with a shell-provided key, XDG selection, HOME fallback, relative/empty XDG handling, missing or relative HOME, explicit config selection, environment-only and local-only operation, permission warnings, symlink target checks, and rejection of nonregular files.
+- Existing retrieval, ranking, date evidence, malformed-output, HTTP-error, literal-argument, configuration-precedence, resource-limit, UTF-8, noninteractive, no-persistence, and Dolphin prompt checks continue to pass. No live API call was made for the config change.
 - A live end-to-end request from the compiled application successfully retrieved and extracted a synthetic Acme Vector Search workshop delivered on 2026-10-22. No real customer notes were used; synthetic live-test files were removed.
 - Earlier minimal connectivity verification returned HTTP 200 and `OK` from `gpt-6-astra-2026-09-03`, using 15 tokens. The working authentication header is `api-key`.
 - `.env` remains local and Git-ignored. Documentation and test fixtures contain no real credentials or private endpoints.
 
 ## Build and run readiness
 
-The executable is `build/bfind`. Verified build and offline-test commands are in the README. The existing local `.env` supplies the Grove connection settings and customer notes root.
+The executable is `build/bfind`. Verified build and offline-test commands are in the README. The existing project `.env` must now be selected explicitly with `--env .env` or copied by the user to the XDG/HOME default location, following the README migration instructions.
 
 ## Remaining validation and limitations
 
 - Actual customer-note searches have not been used for acceptance testing. Evaluate extraction quality against known sessions during normal use and adjust retrieval context if needed.
+- The ownership-warning branch has a root-only synthetic test; it was not exercised in this non-root test run. Group/other permission warnings were exercised for both default and explicit config files.
 - Dolphin's launch arguments and selection flow are tested with a mock; an actual desktop window has not been opened during automated verification.
 - Retrieval depends on literal query-word matches and bounded candidates. It does not extract PDFs or slides, guarantee exhaustive retrieval, or identify multiple sessions separately within the same directory.
 - LLM interpretation can still misidentify a customer, subject, or the meaning of a date despite ID and evidence validation. Unrecognized date formats are shown as unknown.

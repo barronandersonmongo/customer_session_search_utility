@@ -32,7 +32,10 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 
 ## Configuration and Grove integration
 
-- Load local configuration from `.env`; maintain a credential-free `.env.example`.
+- Default to `$XDG_CONFIG_HOME/bfind/.env` when XDG_CONFIG_HOME is absolute, otherwise `$HOME/.config/bfind/.env`. Ignore empty or relative XDG_CONFIG_HOME; require an absolute HOME fallback and fail clearly if neither base is usable. Never read cwd `./.env` implicitly.
+- Preserve `--env FILE` as an explicit trusted-file selection, including relative paths. Missing config files are allowed; environment variables override file values individually and `--root` overrides SEARCH_ROOT.
+- Check permissions and ownership with `fstat()` on the same descriptor used to read the configuration. Warn once and continue if mode has any `077` bits or ownership differs from the effective user; do not expose values or paths in the warning. Reject nonregular config files.
+- Maintain a credential-free `.env.example`. Do not read, move, or overwrite the real project `.env` for migration; document user-run migration or explicit `--env` instructions instead.
 - Current variable names are `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `SEARCH_ROOT`.
 - The chosen model is `gpt-6-astra`. Preserve this selection unless the user changes it; keep it configurable.
 - Use the `api-key` header for Grove authentication.

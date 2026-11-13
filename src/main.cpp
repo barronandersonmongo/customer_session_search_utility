@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <poll.h>
 #include <regex>
 #include <set>
@@ -19,6 +20,7 @@
 #include <vector>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -123,7 +125,8 @@ ProcessResult process(const std::vector<std::string>& args, const std::string& i
 }
 
 struct Options {
-    fs::path env = ".env", root;
+    std::optional<fs::path> env;
+    fs::path root;
     std::string query;
     int candidates = 20, results = 10, context = 6;
     bool no_open = false, local = false, check = false;
@@ -143,7 +146,8 @@ Options options(int argc, char** argv) {
         if (a == "--help" || a == "-h") {
             std::cout << "Usage: bfind [options] TOPIC\n"
                          "  --root DIR          Notes directory (overrides SEARCH_ROOT)\n"
-                         "  --env FILE          Configuration file (default: .env in working directory)\n"
+                         "  --env FILE          Explicit config file (default: $XDG_CONFIG_HOME/bfind/.env\n"
+                         "                      or $HOME/.config/bfind/.env)\n"
                          "  --limit N           Display at most N results (default 10, max 30)\n"
                          "  --candidates N      Send at most N folders (default 20, max 40)\n"
                          "  --context N         Surrounding lines per match (default 6, max 30)\n"
@@ -169,12 +173,43 @@ Options options(int argc, char** argv) {
     if (o.check && o.local) throw std::runtime_error("--check-connection cannot be combined with --local-only.");
     return o;
 }
+fs::path default_config_path() {
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && fs::path(xdg).is_absolute())
+        return fs::path(xdg) / "bfind/.env";
+    if (const char* home = std::getenv("HOME"); home && fs::path(home).is_absolute())
+        return fs::path(home) / ".config/bfind/.env";
+    throw std::runtime_error("Cannot resolve default configuration: set an absolute XDG_CONFIG_HOME or HOME, or use --env FILE.");
+}
 std::map<std::string, std::string> config(const fs::path& path) {
     std::map<std::string, std::string> values;
-    std::ifstream file(path);
-    if (!file && fs::exists(path)) throw std::runtime_error("Cannot read configuration file.");
+    // Check and read the same opened file; do not reopen a path after checking it.
+    struct File {
+        int fd;
+        ~File() { if (fd >= 0) close(fd); }
+    } file{open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK)};
+    std::string contents;
+    if (file.fd < 0) {
+        if (errno != ENOENT) throw std::runtime_error("Cannot read configuration file.");
+    } else {
+        struct stat metadata{};
+        if (fstat(file.fd, &metadata) != 0) throw std::runtime_error("Cannot inspect configuration file.");
+        if (!S_ISREG(metadata.st_mode)) throw std::runtime_error("Configuration must be a regular file.");
+        if ((metadata.st_mode & 077) || metadata.st_uid != geteuid())
+            std::cerr << "Warning: configuration file is accessible to group/others or is not owned by the current user; use a user-owned file with mode 0600.\n";
+        char buffer[4096];
+        for (;;) {
+            ssize_t count = read(file.fd, buffer, sizeof(buffer));
+            if (count == 0) break;
+            if (count < 0) {
+                if (errno == EINTR) continue;
+                throw std::runtime_error("Cannot read configuration file.");
+            }
+            contents.append(buffer, static_cast<size_t>(count));
+        }
+    }
+    std::istringstream stream(contents);
     std::string line;
-    while (std::getline(file, line)) {
+    while (std::getline(stream, line)) {
         line = trim(line);
         if (line.empty() || line[0] == '#') continue;
         if (line.rfind("export ", 0) == 0) line = trim(line.substr(7));
@@ -427,7 +462,7 @@ int main(int argc, char** argv) {
     std::signal(SIGPIPE, SIG_IGN);
     try {
         auto opt = options(argc, argv);
-        auto cfg = config(opt.env);
+        auto cfg = config(opt.env ? *opt.env : default_config_path());
         if (opt.check) {
             auto reply = api(cfg, json::array{json::object{{"role","user"},{"content","Reply with exactly OK."}}}, 256, false);
             if (trim(reply) != "OK") throw std::runtime_error("Grove responded, but not with the expected test reply.");

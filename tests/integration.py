@@ -79,11 +79,13 @@ class Integration(unittest.TestCase):
         for key in ('LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL', 'SEARCH_ROOT'):
             self.env.pop(key, None)
         self.env.update(PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
+                        HOME=str(self.base / 'home'), XDG_CONFIG_HOME=str(self.base / 'xdg'),
                         MOCK_CALLED=str(self.base / 'called'), MOCK_OPENED=str(self.base / 'opened'))
         self.config = self.base / 'settings.env'
         self.config.write_text('export LLM_API_KEY="synthetic-secret" # comment\n'
                                'LLM_BASE_URL=https://example.invalid/chat/completions\n'
                                'LLM_MODEL=gpt-6-astra\nSEARCH_ROOT="' + str(self.root) + '"\n')
+        self.config.chmod(0o600)
         self.note('Old', 'Customer: Old\nDelivered: 2025-09-14\nSubject: Vector Search Workshop\n')
         self.note('Recent', 'Customer: Recent\nDelivered: 2026-10-22\nSubject: Vector Search Workshop\n')
         self.note('Peripheral', 'Delivered: 2026-10-22\nVector Search was a brief part of another workshop.\n')
@@ -176,6 +178,102 @@ class Integration(unittest.TestCase):
     def test_environment_overrides_dotenv(self):
         self.env['SEARCH_ROOT'] = str(self.root / 'Old')
         self.assertNotIn('Recent', self.run_app('Vector Search').stdout)
+
+    def default_config(self, base):
+        target = base / 'bfind' / '.env'
+        target.parent.mkdir(parents=True)
+        target.write_text(self.config.read_text())
+        target.chmod(0o600)
+        return target
+
+    def run_default(self, *args, success=True):
+        result = subprocess.run([BINARY, '--no-open', *args], env=self.env, cwd=self.base,
+                                text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
+        self.assertNotIn('synthetic-secret', result.stdout + result.stderr)
+        self.assertNotIn('attacker.invalid', result.stdout + result.stderr)
+        return result
+
+    def test_cwd_config_cannot_redirect_environment_key(self):
+        (self.base / '.env').write_text('LLM_BASE_URL=https://attacker.invalid/steal\n'
+                                       'SEARCH_ROOT=/untrusted/unrelated\n')
+        self.env.update(LLM_API_KEY='synthetic-secret', LLM_MODEL='gpt-6-astra')
+        result = self.run_default('--root', str(self.root), 'Vector Search', success=False)
+        self.assertIn('Missing LLM_BASE_URL', result.stderr)
+        self.assertFalse((self.base / 'called').exists())
+
+    def test_xdg_default_ignores_hostile_cwd_config(self):
+        self.default_config(Path(self.env['XDG_CONFIG_HOME']))
+        (self.base / '.env').write_text('LLM_BASE_URL=https://attacker.invalid/steal\n'
+                                       'SEARCH_ROOT=/untrusted/unrelated\n')
+        self.env['LLM_API_KEY'] = 'synthetic-secret'
+        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+
+    def test_home_config_fallback(self):
+        self.env.pop('XDG_CONFIG_HOME')
+        self.default_config(Path(self.env['HOME']) / '.config')
+        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+
+    def test_relative_or_empty_xdg_is_ignored(self):
+        self.default_config(Path(self.env['HOME']) / '.config')
+        for value in ('relative-config', ''):
+            with self.subTest(value=value):
+                self.env['XDG_CONFIG_HOME'] = value
+                self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+
+    def test_absolute_xdg_does_not_require_home(self):
+        self.default_config(Path(self.env['XDG_CONFIG_HOME']))
+        self.env.pop('HOME')
+        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+
+    def test_missing_home_fails_clearly_but_explicit_env_works(self):
+        self.env.pop('XDG_CONFIG_HOME')
+        self.env.pop('HOME')
+        self.assertIn('Cannot resolve default configuration', self.run_default('--check-connection', success=False).stderr)
+        self.assertIn('connection successful', self.run_app('--check-connection').stdout)
+
+    def test_relative_home_is_rejected(self):
+        self.env.pop('XDG_CONFIG_HOME')
+        self.env['HOME'] = 'relative-home'
+        self.assertIn('Cannot resolve default configuration', self.run_default('--check-connection', success=False).stderr)
+
+    def test_missing_default_allows_environment_only(self):
+        self.env.update(LLM_API_KEY='synthetic-secret', LLM_MODEL='gpt-6-astra',
+                        LLM_BASE_URL='https://example.invalid/chat/completions', SEARCH_ROOT=str(self.root))
+        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+
+    def test_missing_default_allows_local_only(self):
+        result = self.run_default('--root', str(self.root), '--local-only', 'Vector Search')
+        self.assertIn('unverified', result.stderr)
+        self.assertFalse((self.base / 'called').exists())
+
+    def test_config_permission_warning(self):
+        for mode in (0o644, 0o640, 0o601, 0o600):
+            with self.subTest(mode=oct(mode)):
+                self.config.chmod(mode)
+                result = self.run_app('--check-connection')
+                self.assertEqual('Warning: configuration file' in result.stderr, mode != 0o600)
+                self.assertNotIn('example.invalid', result.stderr)
+        target = self.default_config(Path(self.env['XDG_CONFIG_HOME']))
+        target.chmod(0o644)
+        self.assertIn('Warning: configuration file', self.run_default('--check-connection').stderr)
+
+    @unittest.skipUnless(os.geteuid() == 0, 'Changing synthetic file ownership requires root')
+    def test_config_ownership_warning(self):
+        os.chown(self.config, 1, -1)
+        self.assertIn('Warning: configuration file', self.run_app('--check-connection').stderr)
+
+    def test_config_checks_symlink_target(self):
+        link = self.base / 'linked.env'
+        link.symlink_to(self.config)
+        result = self.run_default('--env', str(link), '--check-connection')
+        self.assertNotIn('Warning:', result.stderr)
+
+    def test_nonregular_config_rejected_without_blocking(self):
+        pipe = self.base / 'config.fifo'
+        os.mkfifo(pipe)
+        result = self.run_default('--env', str(pipe), '--check-connection', success=False)
+        self.assertIn('regular file', result.stderr)
 
     def test_invalid_cli_and_missing_configuration(self):
         for args in ((), ('--limit', '0', 'topic'), ('--candidates', '41', 'topic'), ('--context', 'bad', 'topic'), ('--bogus',)):
