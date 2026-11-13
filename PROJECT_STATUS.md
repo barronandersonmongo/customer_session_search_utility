@@ -7,6 +7,7 @@ The initial C++ command-line application is implemented and builds successfully.
 ## Completed
 
 - Added a one-line stderr notice after nonempty LLM-generated results, preserving stdout and excluding local-only, empty-result, and connection-check modes.
+- Added a 50% distinct-term coverage requirement, rounded up, for direct relevance 3. Coverage counts only note text retained in the submitted excerpt, excluding path/filename metadata and omitted lines. Insufficient coverage caps 3 to 2 without dropping results or changing recency-first eligibility. The threshold is centralized in `kMinimumDirectCoveragePercent`.
 - Named the program `bfind` (Barry Find), including its executable, build target, installation target, and CLI help.
 
 - Configured the GitHub repository as `origin`, with small, focused commits and pushes at the end of each interaction.
@@ -23,10 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 44 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 54 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
 
+- For the coverage cap, the build and CTest succeeded: 53 cases passed and the root-only ownership case was skipped. New tests observe ranking to verify sparse-term capping, odd/even thresholds, full/half coverage, duplicate/case-insensitive terms, single-term queries, metadata exclusion, excerpt-budget omissions, unchanged peripheral ratings, and continued eligibility of newer capped results. Existing future-date and notice tests pass. No live API call was made, and the real `.env` was not accessed.
 - For the model-generated notice, configure/build and CTest succeeded: 43 cases passed and the root-only ownership test was skipped. Tests assert exact unchanged stdout and a single stderr notice, plus its absence in local-only, no-match, empty verified-result, and connection-check modes. No live API calls were made and the real `.env` was not accessed.
 - For the ranking and future-date change, `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build -j2`, and `ctest --test-dir build --output-on-failure` succeeded. Of 42 cases, 41 passed and the root-only ownership test was skipped.
 - New ranking cases verify that newer relevance-2 sessions outrank older relevance-3 sessions, peripheral results follow the entire on-topic group, unknown dates follow dated sessions within each group, and ties use relevance, local score, and deterministic candidate order even when mock results are reversed.
@@ -46,6 +48,7 @@ The executable is `build/bfind`. Verified build and offline-test commands are in
 ## Remaining validation and limitations
 
 - Matching date evidence does not authenticate a delivery. Customer and subject are not independently verified against excerpts; convincing planted notes with forged past dates can still mislead the model and ranking.
+- The coverage cap is a lexical consistency check, not a prompt-injection security barrier. Planted text can include all query terms. Ratings 2 and 3 remain on-topic, so the cap affects relevance tie-breaking, not recency-first ordering or eligibility. Evidenced future deliveries remain excluded.
 - Actual customer-note searches have not been used for acceptance testing. Evaluate extraction quality against known sessions during normal use and adjust retrieval context if needed.
 - The ownership-warning branch has a root-only synthetic test; it was not exercised in this non-root test run. Group/other permission warnings were exercised for both default and explicit config files.
 - Dolphin's launch arguments and selection flow are tested with a mock; an actual desktop window has not been opened during automated verification.

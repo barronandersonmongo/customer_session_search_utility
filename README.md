@@ -60,6 +60,10 @@ After an LLM search returns results, a short stderr notice reminds you to check 
 
 Local checks validate candidate IDs, relevance ranges, calendar dates, and matching date evidence; they do not authenticate what the notes claim. Customer and subject are not independently verified against excerpts. A convincing planted note with a forged past delivery date can still mislead the model and rank highly. Matching evidence proves that the source contains a date, not that a delivery happened.
 
+A direct relevance rating of 3 requires at least 50% of the distinct query terms, rounded up, in the note text actually retained in the submitted excerpt. Otherwise it is capped at 2; ratings 1 and 2 are unchanged, and the check never drops a result. Coverage uses case-insensitive literal matching and excludes folder paths, filename prefixes, and lines omitted by the excerpt budget. A single-term query passes when that term is present in the submitted note text. The percentage is centralized in `kMinimumDirectCoveragePercent`.
+
+This is a lexical sanity check, not a prompt-injection defense: planted content can include all query terms. Because ratings 2 and 3 both qualify as on-topic and recency takes priority, this cap affects relevance tie-breaking, not on-topic eligibility or the date ordering. Evidenced future deliveries remain excluded entirely.
+
 ### Build
 
 Dependencies: a C++17 compiler, CMake 3.18+, Boost headers with Boost.JSON (1.75+), ripgrep, and curl. Python 3 is used for offline tests; Dolphin is optional for opening folders.

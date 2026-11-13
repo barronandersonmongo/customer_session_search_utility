@@ -129,9 +129,73 @@ class Integration(unittest.TestCase):
                                    relevance=relevance)
         self.env['TEST_RESULTS'] = json.dumps(overrides)
 
-    def ranked_customers(self, **kwargs):
-        result = self.run_app('Vector Search', **kwargs)
+    def ranked_customers(self, query='Vector Search', **kwargs):
+        result = self.run_app(query, **kwargs)
         return [line.split('. ', 1)[1].split(' | ', 1)[0] for line in result.stdout.splitlines() if ' | ' in line]
+
+    def coverage_fixture(self, claimed_text, reference_text, claimed_name='Claimed', filename='notes.txt', reference_rating=2):
+        self.ranking_fixture([])
+        self.note(claimed_name, 'Delivered: 2025-01-01\n' + claimed_text, filename)
+        self.note('Reference', 'Delivered: 2025-01-01\n' + reference_text)
+        self.env['TEST_RESULTS'] = json.dumps({
+            claimed_name: dict(date='2025-01-01', date_evidence='2025-01-01', relevance=3),
+            'Reference': dict(date='2025-01-01', date_evidence='2025-01-01', relevance=reference_rating)})
+
+    def test_sparse_three_term_match_caps_direct_rating(self):
+        self.coverage_fixture('alpha\n', 'alpha beta gamma\n')
+        self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', 'Claimed'])
+
+    def test_direct_coverage_rounds_up_for_odd_term_counts(self):
+        for text, expected in (('alpha beta\n', ['Reference', 'Claimed']),
+                               ('alpha beta gamma\n', ['Claimed', 'Reference'])):
+            with self.subTest(text=text):
+                self.coverage_fixture(text, 'alpha beta gamma delta epsilon\n')
+                self.assertEqual(self.ranked_customers('alpha beta gamma delta epsilon'), expected)
+
+    def test_half_or_full_coverage_preserves_direct_rating(self):
+        for query, text in (('alpha beta gamma', 'alpha beta\n'),
+                            ('alpha beta gamma delta', 'alpha beta\n'),
+                            ('alpha beta gamma', 'alpha beta gamma\n')):
+            with self.subTest(query=query, text=text):
+                self.coverage_fixture(text, query + '\n' + query + '\n')
+                self.assertEqual(self.ranked_customers(query), ['Claimed', 'Reference'])
+
+    def test_duplicate_case_insensitive_query_terms_count_once(self):
+        self.coverage_fixture('ALPHA BeTa\n', 'alpha beta gamma\n')
+        self.assertEqual(self.ranked_customers('ALPHA alpha BETA beta gamma'), ['Claimed', 'Reference'])
+
+    def test_single_term_present_in_excerpt_preserves_direct_rating(self):
+        self.coverage_fixture('alpha\n', 'alpha exercise one\nalpha exercise two\n')
+        self.assertEqual(self.ranked_customers('alpha'), ['Claimed', 'Reference'])
+
+    def test_folder_names_do_not_justify_direct_rating(self):
+        name = 'Claimed beta gamma'
+        self.coverage_fixture('alpha one\nalpha two\nalpha three\nalpha four\n',
+                              'alpha\nbeta\ngamma\n', claimed_name=name, reference_rating=3)
+        self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', name])
+
+    def test_filename_prefixes_do_not_justify_direct_rating(self):
+        self.coverage_fixture('alpha\n', 'alpha beta gamma\n', filename='beta gamma.txt')
+        self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', 'Claimed'])
+
+    def test_lines_omitted_from_submitted_excerpt_do_not_count(self):
+        self.coverage_fixture('alpha ' + 'x' * 1050 + '\nalpha ' + 'y' * 1050 + '\n' +
+                              'beta gamma ' + 'z' * 1100 + '\n', 'alpha beta gamma\n')
+        self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', 'Claimed'])
+
+    def test_cap_preserves_peripheral_rating_and_does_not_drop_results(self):
+        self.coverage_fixture('alpha\n', 'alpha beta gamma\n')
+        overrides = json.loads(self.env['TEST_RESULTS'])
+        overrides['Claimed']['relevance'] = 1
+        self.env['TEST_RESULTS'] = json.dumps(overrides)
+        self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', 'Claimed'])
+
+    def test_capped_newer_session_still_qualifies_for_recency_ranking(self):
+        self.coverage_fixture('alpha\nDelivered: 2025-02-01\n', 'alpha beta gamma\n', reference_rating=3)
+        overrides = json.loads(self.env['TEST_RESULTS'])
+        overrides['Claimed'].update(date='2025-02-01', date_evidence='2025-02-01')
+        self.env['TEST_RESULTS'] = json.dumps(overrides)
+        self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Claimed', 'Reference'])
 
     def test_newer_substantial_session_beats_older_direct_session(self):
         self.ranking_fixture([('Direct', '2025-01-01', 3, 1), ('Substantial', '2025-02-01', 2, 1)])

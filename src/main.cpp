@@ -276,6 +276,7 @@ struct Candidate {
     fs::path folder;
     std::map<std::string, std::map<int, std::string>> lines;
     int hits = 0, score = 0;
+    int excerpt_term_coverage = 0, query_term_count = 0;
     std::string excerpt;
 };
 bool inside(const fs::path& path, const fs::path& root) {
@@ -342,15 +343,24 @@ std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
         c.score = coverage * 100 + (searchable.find(lower(opt.query)) != std::string::npos ? 50 : 0) + std::min(c.hits, 20);
         // Put actual matches before surrounding lines so the excerpt budget retains the topic.
         std::set<std::string> seen;
+        std::string submitted_note_text;
         for (int pass = 0; pass < 2; ++pass) {
             for (const auto& file : c.lines) for (const auto& l : file.second) {
                 bool matching = false;
                 for (const auto& word : words) if (lower(l.second).find(word) != std::string::npos) matching = true;
                 if ((pass == 0) != matching || !seen.insert(trim(l.second)).second) continue;
                 std::string entry = file.first + ":" + std::to_string(l.first) + ": " + trim(l.second) + '\n';
-                if (c.excerpt.size() + entry.size() <= 3000) c.excerpt += entry;
+                if (c.excerpt.size() + entry.size() <= 3000) {
+                    c.excerpt += entry;
+                    submitted_note_text += trim(l.second) + '\n';
+                }
             }
         }
+        // Count only note text actually retained in the submitted excerpt, not path/filename metadata.
+        submitted_note_text = lower(submitted_note_text);
+        c.query_term_count = static_cast<int>(words.size());
+        for (const auto& word : words)
+            if (submitted_note_text.find(word) != std::string::npos) ++c.excerpt_term_coverage;
         c.lines.clear();
         candidates.push_back(std::move(c));
     }
@@ -395,6 +405,11 @@ bool date_supported(const std::string& date, const std::string& evidence) {
     return false;
 }
 struct Result { size_t id; std::string customer, date, subject; int relevance; };
+constexpr int kMinimumDirectCoveragePercent = 50;
+int cap_relevance(int relevance, const Candidate& candidate) {
+    const int required = (candidate.query_term_count * kMinimumDirectCoveragePercent + 99) / 100;
+    return relevance == 3 && candidate.excerpt_term_coverage < required ? 2 : relevance;
+}
 // Keep the on-topic threshold in one place; peripheral results remain visible below it.
 bool on_topic(const Result& result) { return result.relevance >= 2; }
 std::string local_today() {
@@ -449,7 +464,7 @@ Order does not matter; the application ranks results.)";
             // Only compare a validated, evidenced ISO date. Missing/invalid evidence remains Unknown.
             if (date != "Unknown" && date > today) continue;
             results.push_back({id, customer.empty() ? "Unknown" : clean(customer), date,
-                               subject.empty() ? "Unknown" : clean(subject), static_cast<int>(relevance)});
+                               subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id])});
         }
     } catch (...) { throw std::runtime_error("LLM returned invalid session data; no results were accepted."); }
     std::sort(results.begin(), results.end(), [&](const Result& a, const Result& b) {
