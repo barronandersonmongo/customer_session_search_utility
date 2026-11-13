@@ -6,6 +6,8 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
+- Session-folder and note-filename titles now receive equal primary authority in LLM current-subject assessment, with historical body references explicitly distinguished from the current delivery. Retained source filenames are supplied separately from excerpts. Local candidate scoring gives either title source fivefold term weight and a 250 title phrase bonus, without repeated-title stacking; body-only phrase bonuses remain 50. Discovery still requires a body-text ripgrep match; no filename-only enumeration was added. Date evidence and note-only coverage rules remain unchanged.
+
 - LLM verification now requests a semantic presentation-title match for specific presentation queries. Matching on-topic sessions rank before other on-topic sessions, newest first within each subgroup; peripheral results stay last. Broad/ambiguous queries use false, and missing or malformed optional flags default false. Local-only ranking is unchanged. This supersedes unconditional recency-first ordering among all on-topic results; the title-match judgment is not independently verified.
 
 - Added the team’s 13 curated presentation titles in `src/presentation_titles.hpp` to LLM relevance and subject instructions. Evidence-supported abbreviations/paraphrases should resolve to exact titles; ambiguous matches retain evidence-based subjects. Extending the catalog requires editing that header and rebuilding. Local retrieval and ranking are unchanged; subject normalization remains model judgment.
@@ -37,6 +39,8 @@ The initial C++ command-line application is implemented and builds successfully.
 - Added 119 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Folder/filename authority: Release configure/build and all four offline suites passed (121 integration passes, one ownership skip, plus native suites). Synthetic tests verify equal folder/filename title scores, priority over repeated body mentions, filename retention through a one-candidate shortlist, separate source filenames in the request, and the historical/current-session prompt instructions. The existing filename-coverage test now compares against a relevance-3 reference so it verifies note-only capping independently of the intentional filename scoring boost. No real notes, `.env`, live API calls, or live LLM classification were used.
 
 - Presentation-match priority: Release configure/build succeeded. The offline run passed the new match-priority/recency/unknown-date and malformed-flag/peripheral-guard cases, existing ranking/date/local-only checks, and all three native suites (121 integration cases run, one ownership skip). One stale verbose ordering-string assertion failed in that run; after updating it to the new order, its targeted rerun passed. Mock requests assert the new semantic-match instructions. No live model classification, real customer notes, `.env` access, or live API calls were used.
 

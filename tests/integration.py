@@ -80,6 +80,8 @@ else:
         assert f'{index}. {title}\n' in instructions
     assert 'return its exact curated title as subject' in instructions
     assert 'Do not force an ambiguous match' in instructions
+    assert 'Folder titles and file titles have equal authority' in instructions
+    assert 'historical references to' in instructions
     assert 'Return title_match as a boolean' in instructions
     assert 'Use false for broad topic queries' in instructions
     assert 'catalog is reference\nvocabulary, not evidence' in instructions
@@ -96,6 +98,10 @@ else:
         markers = json.loads(state['LEGACY_MARKERS'])
         assert all(sum(marker in c['excerpts'] for marker in markers) == 1 for c in candidates)
     for c in candidates:
+        assert isinstance(c['source_files'], list) and 0 < len(c['source_files']) <= 12
+        assert all(isinstance(name, str) for name in c['source_files'])
+        if Path(c['folder']).name == 'FileTitle':
+            assert c['source_files'] == ['Vector Search.txt']
         for text in json.loads(state.get('EXPECTED_EXCERPT_TEXT', '{}')).get(Path(c['folder']).name, []):
             assert text in c['excerpts']
     results = []
@@ -213,6 +219,24 @@ class Integration(unittest.TestCase):
         result = self.run_app(query, **kwargs)
         return [line.split('. ', 1)[1].split(' | ', 1)[0] for line in result.stdout.splitlines() if ' | ' in line]
 
+    def test_folder_and_filename_titles_have_equal_stronger_local_weight(self):
+        self.ranking_fixture([])
+        text = 'Delivered: 2025-03-01\nVector Search\n'
+        self.note('Vector Search', text)
+        self.note('FileTitle', text, 'Vector Search.txt')
+        self.note('Body', text + 'Vector Search historical detail\n' * 11)
+        result = self.run_app('--local-only', '--verbose', 'Vector Search')
+        names = [line.split('. ', 1)[1].split(' | ', 1)[0] for line in result.stdout.splitlines() if ' | ' in line]
+        self.assertEqual(names, ['FileTitle', 'Vector Search', 'Body'])
+        scores = [line.split('score=', 1)[1].split(' = ', 1)[0]
+                  for line in result.stderr.splitlines() if ') score=' in line]
+        self.assertEqual(scores[0], scores[1])
+        self.assertGreater(int(scores[0]), int(scores[2]))
+        # A filename title survives a one-candidate shortlist, despite frequent historical body hits.
+        verified = self.run_app('--candidates', '1', 'Vector Search')
+        self.assertIn('a. FileTitle', verified.stdout)
+        self.assertNotIn('b. ', verified.stdout)
+
     def test_title_match_precedes_newer_related_sessions(self):
         self.ranking_fixture([('Humana', '2025-01-14', 3, 1),
                               ('Liberty', '2025-03-01', 2, 1),
@@ -283,7 +307,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', name])
 
     def test_filename_prefixes_do_not_justify_direct_rating(self):
-        self.coverage_fixture('alpha\n', 'alpha beta gamma\n', filename='beta gamma.txt')
+        self.coverage_fixture('alpha\n', 'alpha beta gamma\n', filename='beta gamma.txt', reference_rating=3)
         self.assertEqual(self.ranked_customers('alpha beta gamma'), ['Reference', 'Claimed'])
 
     def test_lines_omitted_from_submitted_excerpt_do_not_count(self):
