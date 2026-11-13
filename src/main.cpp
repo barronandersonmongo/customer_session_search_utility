@@ -308,7 +308,7 @@ std::vector<std::string> terms(const std::string& query) {
 }
 std::vector<Candidate> retrieve(const Options& opt, const fs::path& root) {
     auto words = terms(opt.query);
-    std::vector<std::string> args{"rg", "--no-config", "--json", "--ignore-case", "--fixed-strings", "--context", std::to_string(opt.context),
+    std::vector<std::string> args{"rg", "--no-config", "--json", "--sort", "path", "--ignore-case", "--fixed-strings", "--context", std::to_string(opt.context),
         "--max-count", "12", "--max-filesize", "2M", "--color", "never"};
     for (const auto& word : words) { args.push_back("-e"); args.push_back(word); }
     args.push_back("--"); args.push_back(root.string());

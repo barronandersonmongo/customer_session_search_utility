@@ -532,6 +532,17 @@ class Integration(unittest.TestCase):
         self.assertIn('Search output limit reached', result.stderr)
         self.assertIn('1. ', result.stdout)
 
+    def test_output_limited_retrieval_is_repeatable(self):
+        self.ranking_fixture([])
+        for i in range(16):
+            self.note('Volume' + str(i), ('Vector Search ' + 'x' * 100000 + '\n') * 12)
+        outputs = []
+        for _ in range(2):
+            result = self.run_app('--local-only', '--limit', '30', 'Vector Search')
+            self.assertIn('Search output limit reached', result.stderr)
+            outputs.append(result.stdout)
+        self.assertEqual(outputs[0], outputs[1])
+
     def interact(self, answer):
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)

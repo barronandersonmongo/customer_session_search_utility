@@ -24,9 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 63 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 64 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Deterministic retrieval: build/CTest passed (63 passed, one root-only test skipped). Repeated local searches over a synthetic tree exceeding 16 MiB produced identical result lists and output-cap warnings with `rg --sort path`. Timeouts and concurrent tree changes are not claimed to be repeatable.
 
 - Shortlist improvements: build/CTest passed (62 passed, one root-only test skipped). Default candidates are now 40. Tests cover stopword exclusion and all-stopword fallback, rarity preference, an exact 40-candidate request, and coverage using filtered terms. The deterministic tie expectation intentionally changed to ascending paths; folder-name dates are not used to infer recency.
 
