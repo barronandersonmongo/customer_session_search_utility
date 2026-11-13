@@ -60,6 +60,7 @@ Build a C++ command-line utility that helps the user find relevant, recent custo
 - Keep credentials and API request bodies on stdin to curl, never in process arguments or temporary files. Preserve HTTPS-only transport, disabled curl user configuration, and no redirects.
 - Preserve bounded retrieval and request sizes. Keep the README's limit values and configuration precedence accurate when changing them.
 - Use ripgrep `--sort path` for repeatable file order and output-cap selection on unchanged trees. Do not claim timeout-based selection is deterministic.
+- Per the user's notes-scope decision, pass `--no-ignore` so ordinary ignored notes are searchable, while retaining default hidden-file, binary-file, and symlink exclusions. Do not add `--hidden`, binary searching, or document extraction without a user decision.
 - Validate result IDs against local candidates, reject duplicate IDs and incomplete completions, and require a valid calendar date supported by a matching source quote. Use `Unknown` when date evidence is unsupported.
 - Tolerate absent/null/non-string optional text fields as Unknown or empty evidence. Skip items with oversized customer/subject strings with one stderr count; fail if all items are oversized. Non-object items and invalid ID/relevance/duplicates remain fatal. Preserve successful empty results when all usable items are excluded future deliveries.
 - Dolphin launches independently of the CLI. Do not wait for its GUI lifetime or kill it on a request timeout. Prompt only when stdin is interactive, unless `--no-open` suppresses it.

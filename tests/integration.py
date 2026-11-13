@@ -408,6 +408,27 @@ class Integration(unittest.TestCase):
                 self.assertEqual(result.stdout.count('\n   '), 1)
                 self.assertIn('\n   ' + str(expected) + '\n', result.stdout)
 
+    def test_ignore_rules_do_not_hide_ordinary_notes(self):
+        (self.root / '.ignore').write_text('Ignored/\n')
+        (self.root / '.gitignore').write_text('GitIgnored/\n')
+        (self.root / '.git').mkdir()
+        first = self.note('Ignored', 'visibilityprobe\n')
+        second = self.note('GitIgnored', 'visibilityprobe\n')
+        result = self.run_app('--local-only', 'visibilityprobe')
+        self.assertEqual(result.stdout.count('\n   '), 2)
+        self.assertIn(str(first), result.stdout)
+        self.assertIn(str(second), result.stdout)
+
+    def test_hidden_and_binary_notes_remain_excluded(self):
+        self.note('.private', 'visibilityprobe\n')
+        (self.root / '.env').write_text('visibilityprobe\n')
+        (self.root / 'binary.dat').write_bytes(b'\x00visibilityprobe\n')
+        visible = self.note('Visible', 'visibilityprobe\n', 'notes.md')
+        result = self.run_app('--local-only', 'visibilityprobe')
+        self.assertEqual(result.stdout.count('\n   '), 1)
+        self.assertIn(str(visible), result.stdout)
+        self.assertNotIn('.private', result.stdout)
+
     def test_http_error_hides_response_and_credentials(self):
         result = self.run_app('Vector Search', mode='http', success=False)
         self.assertIn('HTTP 401', result.stderr)

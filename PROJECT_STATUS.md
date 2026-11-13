@@ -24,9 +24,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 72 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 74 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Final scope-policy verification: configure/build and both CTest suites passed (73 integration passes, one root-only ownership skip, plus native process checks). Tests demonstrate that `.ignore` and `.gitignore` no longer hide ordinary notes, while hidden folders, hidden files (including a synthetic `.env`), and binary files remain excluded. No live API calls, real customer-note reads, or real `.env` access were performed.
 
 - Customer/date grouping: build and both suites passed (71 integration passes, one root-only skip, plus native process checks). Synthetic tests cover multiple direct/nested documents per session, same-named documents in separate subfolders, separate date folders, and narrowed roots with containment preserved. No real notes were read.
 
@@ -75,4 +77,4 @@ Update this document when implementation progress, readiness, completed verifica
 
 ## Retrieval layout and scope decisions
 
-The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files will be included, with hidden files and binary content still excluded. Customer/date grouping is implemented, with the configured root anchoring the layout and narrowed roots retaining containment. Ignore behavior will be implemented in its own focused change.
+The user confirmed customer/date/document folders, potentially with multiple documents per session. Text search remains sufficient; no PDF/slide extraction is requested. The user does not expect hidden files and does not need ignore rules: ordinary ignored files are included, with hidden files and binary content still excluded. Customer/date grouping is implemented, with the configured root anchoring the layout and narrowed roots retaining containment. The ignore decision is implemented with `--no-ignore` and no `--hidden`; there are no outstanding layout or ignore-policy questions from this review.
