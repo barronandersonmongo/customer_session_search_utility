@@ -169,9 +169,9 @@ class Integration(unittest.TestCase):
     def test_ranking_and_folder_deduplication(self):
         self.note('Recent', 'Vector Search Workshop\nDelivered: 2025-03-01\n', 'duplicate.txt')
         result = self.run_app('vector search')
-        self.assertIn('1. Recent | 2025-03-01', result.stdout)
-        self.assertIn('2. Related | 2025-03-01', result.stdout)
-        self.assertIn('3. Old | 2025-01-14', result.stdout)
+        self.assertIn('a. Recent | 2025-03-01', result.stdout)
+        self.assertIn('b. Related | 2025-03-01', result.stdout)
+        self.assertIn('c. Old | 2025-01-14', result.stdout)
         self.assertEqual(result.stdout.count(str(self.root / 'Recent')), 1)
         self.assertNotIn('Open result', result.stdout)
 
@@ -299,14 +299,14 @@ class Integration(unittest.TestCase):
         overrides['Unsupported']['date_evidence'] = 'never appeared in the notes'
         self.env['TEST_RESULTS'] = json.dumps(overrides)
         result = self.run_app('Vector Search')
-        self.assertIn('1. Dated', result.stdout)
+        self.assertIn('a. Dated', result.stdout)
         self.assertIn('Invalid | Unknown |', result.stdout)
         self.assertIn('Unsupported | Unknown |', result.stdout)
 
     def test_result_limit_is_applied_after_new_ranking(self):
         self.ranking_fixture([('DirectOld', '2025-01-01', 3, 1), ('RelatedNew', '2025-02-01', 2, 1)])
         result = self.run_app('--limit', '1', 'Vector Search')
-        self.assertIn('1. RelatedNew', result.stdout)
+        self.assertIn('a. RelatedNew', result.stdout)
         self.assertNotIn('DirectOld', result.stdout)
 
     def test_no_matches_skip_api(self):
@@ -317,7 +317,7 @@ class Integration(unittest.TestCase):
     def test_model_notice_is_stderr_only_and_stdout_is_unchanged(self):
         self.ranking_fixture([('Recent', '2025-03-01', 3, 1)])
         result = self.run_app('Vector Search')
-        self.assertEqual(result.stdout, '1. Recent | 2025-03-01 | Vector Search Workshop\n   ' +
+        self.assertEqual(result.stdout, 'a. Recent | 2025-03-01 | Vector Search Workshop\n   ' +
                          str(self.root / 'Recent') + '\n\n')
         self.assertEqual(result.stderr, 'Model-generated results: check customer, date, and subject in the folder before relying on them.\n')
 
@@ -359,7 +359,7 @@ class Integration(unittest.TestCase):
             self.assertIsNone(p.poll(), 'Progress appeared only after the request completed.')
             stdout, stderr = p.communicate(timeout=7)
             self.assertEqual(p.returncode, 0, (received + stderr).decode())
-            self.assertIn(b'1. Recent', stdout)
+            self.assertIn(b'a. Recent', stdout)
         finally:
             if p.poll() is None: p.kill()
             p.communicate()
@@ -388,7 +388,7 @@ class Integration(unittest.TestCase):
 
     def test_verbose_maps_displayed_results_to_source_and_model_rating(self):
         result = self.run_app('--verbose', 'Vector Search')
-        self.assertRegex(result.stderr, r'Result 1 \(candidate [0-9]+\): source=folder:.*Recent')
+        self.assertRegex(result.stderr, r'Result a \(candidate [0-9]+\): source=folder:.*Recent')
         self.assertIn('LLM relevance=3 -> effective relevance=3; group=on-topic', result.stderr)
         self.assertIn('LLM relevance=2 -> effective relevance=2; group=on-topic', result.stderr)
         self.assertIn('Ordering: group, newest date', result.stderr)
@@ -437,7 +437,7 @@ class Integration(unittest.TestCase):
         for mode in ('bad-id', 'bad-relevance', 'nonobject', 'duplicate', 'malformed', 'length'):
             with self.subTest(mode=mode):
                 result = self.run_app('Vector Search', mode=mode, success=False)
-                self.assertNotIn('1. ', result.stdout)
+                self.assertNotIn('a. ', result.stdout)
 
     def test_optional_model_text_fields_are_tolerated(self):
         for mode in ('null-fields', 'missing-fields', 'wrong-fields'):
@@ -534,7 +534,7 @@ class Integration(unittest.TestCase):
         for args in ((), ('--local-only',)):
             with self.subTest(args=args):
                 result = self.run_app(*args, 'Vector Search')
-                self.assertIn('1. Warner Bros. |', result.stdout)
+                self.assertIn('a. Warner Bros. |', result.stdout)
                 self.assertNotIn('Wrong model customer', result.stdout)
 
     def test_file_directly_under_customers_root_has_unknown_customer(self):
@@ -542,7 +542,7 @@ class Integration(unittest.TestCase):
         (self.root / 'notes.txt').write_text('Vector Search\n')
         for args in ((), ('--local-only',)):
             result = self.run_app(*args, 'Vector Search')
-            self.assertIn('1. Unknown Customer |', result.stdout)
+            self.assertIn('a. Unknown Customer |', result.stdout)
 
     def test_separate_session_dates_stay_separate(self):
         first = self.session_tree()
@@ -736,7 +736,7 @@ class Integration(unittest.TestCase):
     def test_legacy_exact_literal_is_accepted_but_does_not_route_search(self):
         self.config.write_text(self.config.read_text() + 'SEARCH_ROOT="' + LOCKED_ROOT + '"\n')
         self.env['SEARCH_ROOT'] = LOCKED_ROOT
-        self.assertIn('1. Recent', self.run_app('Vector Search').stdout)
+        self.assertIn('a. Recent', self.run_app('Vector Search').stdout)
         result = subprocess.run([PRODUCTION_BINARY, '--env', str(self.config), '--check-connection'],
                                 env=self.env, cwd=self.base, text=True, capture_output=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -782,7 +782,7 @@ class Integration(unittest.TestCase):
     def test_curl_timeout_remains_an_error(self):
         result = self.run_app('Vector Search', mode='curl-timeout', success=False)
         self.assertIn('Grove request timed out', result.stderr)
-        self.assertNotIn('1. ', result.stdout)
+        self.assertNotIn('a. ', result.stdout)
 
     def test_curl_environment_preserves_company_settings_and_removes_secrets(self):
         expected = {'https_proxy': 'http://synthetic-proxy.invalid', 'ALL_PROXY': 'http://synthetic-all.invalid',
@@ -867,24 +867,24 @@ class Integration(unittest.TestCase):
         (self.base / '.env').write_text('LLM_BASE_URL=https://attacker.invalid/steal\n'
                                        'SEARCH_ROOT=/untrusted/unrelated\n')
         self.env['LLM_API_KEY'] = 'synthetic-secret'
-        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+        self.assertIn('a. Recent', self.run_default('Vector Search').stdout)
 
     def test_home_config_fallback(self):
         self.env.pop('XDG_CONFIG_HOME')
         self.default_config(Path(self.env['HOME']) / '.config')
-        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+        self.assertIn('a. Recent', self.run_default('Vector Search').stdout)
 
     def test_relative_or_empty_xdg_is_ignored(self):
         self.default_config(Path(self.env['HOME']) / '.config')
         for value in ('relative-config', ''):
             with self.subTest(value=value):
                 self.env['XDG_CONFIG_HOME'] = value
-                self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+                self.assertIn('a. Recent', self.run_default('Vector Search').stdout)
 
     def test_absolute_xdg_does_not_require_home(self):
         self.default_config(Path(self.env['XDG_CONFIG_HOME']))
         self.env.pop('HOME')
-        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+        self.assertIn('a. Recent', self.run_default('Vector Search').stdout)
 
     def test_missing_home_fails_clearly_but_explicit_env_works(self):
         self.env.pop('XDG_CONFIG_HOME')
@@ -900,7 +900,7 @@ class Integration(unittest.TestCase):
     def test_missing_default_allows_environment_only(self):
         self.env.update(LLM_API_KEY='synthetic-secret', LLM_MODEL='gpt-6-astra',
                         LLM_BASE_URL='https://example.invalid/chat/completions')
-        self.assertIn('1. Recent', self.run_default('Vector Search').stdout)
+        self.assertIn('a. Recent', self.run_default('Vector Search').stdout)
 
     def test_missing_default_allows_local_only(self):
         result = self.run_default('--local-only', 'Vector Search')
@@ -936,7 +936,7 @@ class Integration(unittest.TestCase):
         self.assertIn('regular file', result.stderr)
 
     def test_invalid_cli_and_missing_configuration(self):
-        for args in ((), ('--limit', '0', 'topic'), ('--candidates', '41', 'topic'), ('--context', 'bad', 'topic'), ('--bogus',)):
+        for args in ((), ('--limit', '0', 'topic'), ('--limit', '26', 'topic'), ('--candidates', '41', 'topic'), ('--context', 'bad', 'topic'), ('--bogus',)):
             with self.subTest(args=args):
                 self.run_app(*args, success=False)
         self.env['LLM_API_KEY'] = ''
@@ -950,7 +950,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(set(p.name for p in self.base.iterdir()), {'bin', 'settings.env', 'called', 'curl-state.json'})
 
     def test_noninteractive_input_never_prompts(self):
-        result = subprocess.run([BINARY, '--env', str(self.config), 'Vector Search'],
+        result = subprocess.run([BINARY, '--env', str(self.config), '--limit', getattr(self, 'prompt_limit', '10'), 'Vector Search'],
                                 env=self.env, cwd=self.base, text=True, input='', capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('Open result', result.stdout)
@@ -959,14 +959,14 @@ class Integration(unittest.TestCase):
     def test_terminal_input_with_piped_output_never_prompts(self):
         master, slave = pty.openpty()
         try:
-            result = subprocess.run([BINARY, '--env', str(self.config), 'Vector Search'],
+            result = subprocess.run([BINARY, '--env', str(self.config), '--limit', getattr(self, 'prompt_limit', '10'), 'Vector Search'],
                                     env=self.env, cwd=self.base, text=True, stdin=slave,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
         finally:
             os.close(slave)
             os.close(master)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('1. Recent', result.stdout)
+        self.assertIn('a. Recent', result.stdout)
         self.assertNotIn('Open result', result.stdout + result.stderr)
         self.assertFalse((self.base / 'opened').exists())
 
@@ -979,7 +979,7 @@ class Integration(unittest.TestCase):
             self.note('Volume', ('Vector Search ' + 'x' * 100000 + '\n') * 12, str(index) + '.txt')
         result = self.run_app('--local-only', 'Vector Search')
         self.assertIn('Search output limit reached', result.stderr)
-        self.assertIn('1. ', result.stdout)
+        self.assertIn('a. ', result.stdout)
 
     def test_output_limited_retrieval_is_repeatable(self):
         self.ranking_fixture([])
@@ -987,7 +987,7 @@ class Integration(unittest.TestCase):
             self.note('Volume' + str(i), ('Vector Search ' + 'x' * 100000 + '\n') * 12)
         outputs = []
         for _ in range(2):
-            result = self.run_app('--local-only', '--limit', '30', 'Vector Search')
+            result = self.run_app('--local-only', '--limit', '25', 'Vector Search')
             self.assertIn('Search output limit reached', result.stderr)
             outputs.append(result.stdout)
         self.assertEqual(outputs[0], outputs[1])
@@ -1038,17 +1038,17 @@ class Integration(unittest.TestCase):
         monitor = os.dup(slave)
         self.addCleanup(os.close, monitor)
         self.addCleanup(os.close, master)
-        p = subprocess.Popen([BINARY, '--env', str(self.config), 'Vector Search'],
+        p = subprocess.Popen([BINARY, '--env', str(self.config), '--limit', getattr(self, 'prompt_limit', '10'), 'Vector Search'],
                              env=self.env, cwd=self.base, stdin=slave, stdout=slave, stderr=slave)
         os.close(slave)
         self.addCleanup(lambda: p.kill() if p.poll() is None else None)
         output = b''
         deadline = time.monotonic() + 10
-        while b'Open result [1], or q to quit:' not in output and time.monotonic() < deadline:
+        while b'Open result [a], or q to quit:' not in output and time.monotonic() < deadline:
             if select.select([master], [], [], .1)[0]:
                 try: output += os.read(master, 8192)
                 except OSError: break
-        self.assertIn(b'Open result [1], or q to quit:', output)
+        self.assertIn(b'Open result [a], or q to quit:', output)
         mode_deadline = time.monotonic() + 1
         while termios.tcgetattr(monitor)[3] & termios.ICANON and time.monotonic() < mode_deadline:
             time.sleep(.005)
@@ -1079,7 +1079,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.interact(b'\n'), ['--', str(self.root / 'Recent')])
 
     def test_dolphin_selection_and_invalid_input(self):
-        self.assertEqual(self.interact(b'999\n2\n'), ['--', str(self.root / 'Related')])
+        self.assertEqual(self.interact(b'9zb'), ['--', str(self.root / 'Related')])
 
     def test_dolphin_quit(self):
         self.interact(b'q', expect_open=False)
@@ -1090,12 +1090,18 @@ class Integration(unittest.TestCase):
     def test_folder_prompt_restores_terminal_after_interrupt(self):
         self.interact(None, expect_code=-signal.SIGINT, expect_open=False)
 
-    def test_folder_selection_backspace(self):
-        self.assertEqual(self.interact(b'2\x7f1\n'), ['--', str(self.root / 'Recent')])
+    def test_folder_selection_uppercase_is_immediate(self):
+        self.assertEqual(self.interact(b'A'), ['--', str(self.root / 'Recent')])
 
-    def test_folder_selection_accepts_multiple_digits(self):
+    def test_folder_selection_tenth_letter_is_immediate(self):
         self.ranking_fixture([('Case' + str(i).zfill(2), '2025-01-14', 3, 1) for i in range(1, 12)])
-        self.assertEqual(self.interact(b'10\n'), ['--', str(self.root / 'Case10')])
+        self.assertEqual(self.interact(b'j'), ['--', str(self.root / 'Case10')])
+
+    def test_folder_selection_skips_quit_key(self):
+        self.ranking_fixture([('Case' + str(i).zfill(2), '2025-01-14', 3, 1) for i in range(1, 26)])
+        # Raise the display limit for this prompt without changing production defaults.
+        self.prompt_limit = '25'
+        self.assertEqual(self.interact(b'R'), ['--', str(self.root / 'Case17')])
 
     def test_no_display_prevents_dolphin_launch(self):
         self.env.pop('DISPLAY', None)

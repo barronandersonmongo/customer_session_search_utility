@@ -117,7 +117,7 @@ Options options(int argc, char** argv) {
                          "  Searches only /home/barry/GoogleDrive/Builder Relations/Customers/\n"
                          "  --env FILE          Explicit config file (default: $XDG_CONFIG_HOME/bfind/.env\n"
                          "                      or $HOME/.config/bfind/.env)\n"
-                         "  --limit N           Display at most N results (default 10, max 30)\n"
+                         "  --limit N           Display at most N results (default 10, max 25)\n"
                          "  --candidates N      Send at most N candidates (default 40, max 40)\n"
                          "  --context N         Surrounding lines per match (default 6, max 30)\n"
                          "  --no-open           Do not prompt to open a folder\n"
@@ -127,7 +127,7 @@ Options options(int argc, char** argv) {
             std::exit(0);
         } else if (a == "--root") throw std::runtime_error("--root overrides are not allowed; the search folder is fixed.");
         else if (a == "--env") o.env = value();
-        else if (a == "--limit") o.results = number(value(), 30);
+        else if (a == "--limit") o.results = number(value(), 25);
         else if (a == "--candidates") o.candidates = number(value(), 40);
         else if (a == "--context") o.context = number(value(), 30);
         else if (a == "--no-open") o.no_open = true;
@@ -684,7 +684,7 @@ Order does not matter; the application ranks results.)";
 }
 void explain_result(size_t position, const Result& result, const Candidate& candidate,
                     bool local_only, const Progress& progress) {
-    const std::string label = "Result " + std::to_string(position) + " (candidate " + std::to_string(result.id + 1) + ")";
+    const std::string label = "Result " + std::string(1, folder_selection_keys[position - 1]) + " (candidate " + std::to_string(result.id + 1) + ")";
     progress.log(label + ": source=" + clean(candidate.identity));
     progress.log(label + " sample matching locations (up to 3)=" + term_list(candidate.match_locations) + ". Note contents omitted.");
     progress.log(label + " retained note terms=" + term_list(candidate.note_terms) +
@@ -705,14 +705,12 @@ void explain_result(size_t position, const Result& result, const Candidate& cand
 void open_folder(const std::vector<Result>& results, const std::vector<Candidate>& candidates, const fs::path& root) {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
     for (;;) {
-        std::cout << "Open result [1], or q to quit: " << std::flush;
+        std::cout << "Open result [a], or q to quit: " << std::flush;
         auto input = read_folder_selection();
         if (!input) return;
-        auto answer = trim(*input);
-        int selected;
-        try { selected = answer.empty() ? 1 : number(answer, static_cast<int>(results.size())); }
-        catch (...) { std::cerr << "Enter a listed result number, or q.\n"; continue; }
-        auto folder = fs::canonical(candidates[results[selected - 1].id].folder);
+        const auto selected = input->empty() ? 0 : folder_selection_keys.find((*input)[0]);
+        if (selected >= results.size()) { std::cerr << "Press a listed result letter, or q.\n"; continue; }
+        auto folder = fs::canonical(candidates[results[selected].id].folder);
         if (!inside(folder, root)) throw std::runtime_error("Selected folder is no longer inside the search root.");
         launch_dolphin(folder);
         return;
@@ -769,7 +767,7 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < results.size(); ++i) {
             const auto& r = results[i];
             if (opt.verbose) explain_result(i + 1, r, candidates[r.id], opt.local, progress);
-            std::cout << i + 1 << ". " << r.customer << " | " << r.date << (r.year_only ? "*" : "") << " | " << r.subject << '\n'
+            std::cout << folder_selection_keys[i] << ". " << r.customer << " | " << r.date << (r.year_only ? "*" : "") << " | " << r.subject << '\n'
                       << "   " << clean(candidates[r.id].folder.string()) << "\n\n";
         }
         if (!opt.local)

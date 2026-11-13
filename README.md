@@ -11,18 +11,18 @@ Delivering similar content to multiple customers leaves useful material scattere
 - Search plain-text customer event notes for a topic.
 - Identify past sessions with their customer, delivery date, subject, and full folder path.
 - See the newest on-topic deliveries first, followed by peripheral material. Future-dated deliveries are excluded.
-- Open a result folder in Dolphin by entering its number; Enter selects result 1.
+- Open a result folder in Dolphin by pressing its letter (either case), without Enter; Enter selects result a.
 
 When the delivery day is unknown but a year is known, January 1 is used for ranking and shown as `YYYY-01-01*`. If neither is known, the date appears as `Unknown`. Example output:
 
 ```text
-1. Acme | 2026-10-22 | Vector Search Workshop
+a. Acme | 2026-10-22 | Vector Search Workshop
    /home/barry/GoogleDrive/Builder Relations/Customers/Acme/2026-10-22
 
-2. Example Corp | 2026-09-14 | Vector Search Introduction
+b. Example Corp | 2026-09-14 | Vector Search Introduction
    /home/barry/GoogleDrive/Builder Relations/Customers/Example Corp/Search
 
-Open result [1], or q to quit:
+Open result [a], or q to quit:
 ```
 
 ## Technical details
@@ -182,18 +182,18 @@ Additional options:
 ```text
 --env FILE       Explicit trusted config file (default: XDG/HOME user config)
 --verbose, -v    Show live progress, counts, timings, and limits on stderr
---limit N        Maximum displayed results (default 10, maximum 30)
+--limit N        Maximum displayed results (default 10, maximum 25)
 --candidates N   Maximum session candidates sent to the LLM (default 40, maximum 40)
 --context N      Surrounding lines per match (default 6, maximum 30)
 --no-open        Suppress the Dolphin prompt
 --help           Show command-line help
 ```
 
-Use `--` before a topic beginning with a hyphen. At the folder prompt, enter a listed number followed by Enter, press Enter for result 1, or press `q`/`Q` to quit immediately without Enter. Backspace edits numbered selections; invalid selections prompt again. Terminal settings are restored before opening a folder, on quit, and before delivering interruption/termination signals. Launch success means Dolphin was started; desktop integration is handled by Dolphin.
+Use `--` before a topic beginning with a hyphen. At the folder prompt, press a listed letter in either case to open it immediately, press Enter for result a, or press `q`/`Q` to quit immediately. Labels run a–p and r–z, reserving q for quit; at most 25 results can be displayed. Invalid selections prompt again. Terminal settings are restored before opening a folder, on quit, and before delivering interruption/termination signals. Launch success means Dolphin was started; desktop integration is handled by Dolphin.
 
 The CLI exits with code 0 for successful searches (including no matches) and code 1 for errors. Diagnostics go to stderr; results go to stdout.
 
-Use `bfind --verbose "vector search"` to see where time is being spent. Timestamped stderr messages cover configuration readiness, folder availability, ripgrep progress and match counts, grouping and candidate selection, excerpt sizes, LLM request progress and optional token usage, validation outcomes, ranking, and display. Running child processes emit a heartbeat about every two seconds. Local search may take up to 30 seconds and an LLM request up to 55 seconds; verbose mode does not change those limits or add retries. Verbose explanations include sanitized matched/missing query terms, exact-phrase checks in retained note text and folder names, source paths (including legacy-note filenames), up to three matching filename/line references, score components, submitted-excerpt coverage, and model/effective relevance ratings. Result numbers map to candidate IDs after ranking. These explain literal retrieval and ranking, not independent proof of topical relevance; no extra LLM request is made. API values, note excerpts, and raw model responses are not logged. Progress is console-only and is not persisted as an audit log. Normal stdout remains unchanged.
+Use `bfind --verbose "vector search"` to see where time is being spent. Timestamped stderr messages cover configuration readiness, folder availability, ripgrep progress and match counts, grouping and candidate selection, excerpt sizes, LLM request progress and optional token usage, validation outcomes, ranking, and display. Running child processes emit a heartbeat about every two seconds. Local search may take up to 30 seconds and an LLM request up to 55 seconds; verbose mode does not change those limits or add retries. Verbose explanations include sanitized matched/missing query terms, exact-phrase checks in retained note text and folder names, source paths (including legacy-note filenames), up to three matching filename/line references, score components, submitted-excerpt coverage, and model/effective relevance ratings. Result letters map to candidate IDs after ranking. These explain literal retrieval and ranking, not independent proof of topical relevance; no extra LLM request is made. API values, note excerpts, and raw model responses are not logged. Progress is console-only and is not persisted as an audit log. Normal stdout remains unchanged.
 
 ### Development and documentation maintenance
 

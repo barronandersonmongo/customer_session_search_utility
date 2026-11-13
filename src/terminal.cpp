@@ -100,7 +100,6 @@ public:
 
 std::optional<std::string> read_folder_selection() {
     PromptMode mode;
-    std::string answer;
     for (;;) {
         mode.deliver_pending();
         pollfd input{STDIN_FILENO, POLLIN, 0};
@@ -123,12 +122,10 @@ std::optional<std::string> read_folder_selection() {
             std::cout << (key == 4 ? "\n" : std::string(1, static_cast<char>(key)) + "\n") << std::flush;
             return std::nullopt;
         }
-        if (key == '\n' || key == '\r') { std::cout << '\n' << std::flush; return answer; }
-        if (key == 8 || key == 127) {
-            if (!answer.empty()) { answer.pop_back(); std::cout << "\b \b" << std::flush; }
-        } else if (key >= 32 && key < 127 && answer.size() < 64) {
-            answer += static_cast<char>(key);
-            std::cout << static_cast<char>(key) << std::flush;
-        }
+        if (key == '\n' || key == '\r') { std::cout << '\n' << std::flush; return std::string{}; }
+        if (key < 32 || key >= 127) continue;
+        if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
+        std::cout << static_cast<char>(key) << '\n' << std::flush;
+        return std::string(1, static_cast<char>(key));
     }
 }
