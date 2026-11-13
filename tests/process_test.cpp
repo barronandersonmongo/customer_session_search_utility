@@ -55,6 +55,10 @@ int main(int argc, char** argv) {
             int status;
             require(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD, "Child was not reaped.");
         }
+        size_t pulses = 0;
+        auto slow = process({self, "hold-stdout"}, "", 1024, 3, ChildEnvironment::Inherited,
+                            [&](size_t bytes) { require(bytes == 8, "Heartbeat byte count was wrong."); ++pulses; });
+        require(slow.timed_out && pulses > 0, "No progress heartbeat during a slow child.");
         const std::string payload(256 * 1024, 'x');
         auto echo = process({self, "echo"}, payload, payload.size() + 1, 2);
         require(echo.code == 0 && echo.output == payload && !echo.limited, "Pipe exchange failed.");

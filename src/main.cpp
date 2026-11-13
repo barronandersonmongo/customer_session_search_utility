@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <map>
 #include <optional>
 #include <poll.h>
@@ -78,11 +79,25 @@ void launch_dolphin(const fs::path& folder) {
         throw std::runtime_error("Could not launch Dolphin; check that it is installed.");
 }
 
+class Progress {
+    bool enabled_;
+    std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
+public:
+    explicit Progress(bool enabled) : enabled_(enabled) {}
+    void log(const std::string& message) const {
+        if (!enabled_) return;
+        std::ostringstream line;
+        line << "[verbose +" << std::fixed << std::setprecision(1)
+             << std::chrono::duration<double>(std::chrono::steady_clock::now() - start_).count()
+             << "s] " << message;
+        std::cerr << line.str() << std::endl;
+    }
+};
 struct Options {
     std::optional<fs::path> env;
     std::string query;
     int candidates = 40, results = 10, context = 6;
-    bool no_open = false, local = false, check = false;
+    bool no_open = false, local = false, check = false, verbose = false;
 };
 int number(const std::string& s, int max) {
     if (s.empty() || s.find_first_not_of("0123456789") != std::string::npos)
@@ -105,6 +120,7 @@ Options options(int argc, char** argv) {
                          "  --candidates N      Send at most N candidates (default 40, max 40)\n"
                          "  --context N         Surrounding lines per match (default 6, max 30)\n"
                          "  --no-open           Do not prompt to open a folder\n"
+                         "  --verbose, -v       Show progress, counts, timings, and limits on stderr\n"
                          "  --local-only        Show unverified local matches without calling the LLM\n"
                          "  --check-connection  Make a minimal Grove request; no notes are sent\n";
             std::exit(0);
@@ -114,6 +130,7 @@ Options options(int argc, char** argv) {
         else if (a == "--candidates") o.candidates = number(value(), 40);
         else if (a == "--context") o.context = number(value(), 30);
         else if (a == "--no-open") o.no_open = true;
+        else if (a == "--verbose" || a == "-v") o.verbose = true;
         else if (a == "--local-only") o.local = true;
         else if (a == "--check-connection") o.check = true;
         else if (a == "--") { while (++i < argc) { if (!o.query.empty()) o.query += ' '; o.query += argv[i]; } break; }
@@ -221,7 +238,8 @@ std::string curl_transport_error(int code) {
     }
     return "Grove request failed: "s + reason + " (code " + std::to_string(code) + ").";
 }
-std::string api(const std::map<std::string, std::string>& cfg, const json::array& messages, int tokens, bool structured) {
+std::string api(const std::map<std::string, std::string>& cfg, const json::array& messages, int tokens, bool structured,
+                const Progress& progress) {
     auto get = [&](const std::string& k) {
         auto it = cfg.find(k);
         if (it == cfg.end() || it->second.empty()) throw std::runtime_error("Missing " + k + " in configuration.");
@@ -232,10 +250,15 @@ std::string api(const std::map<std::string, std::string>& cfg, const json::array
     if (key.find_first_of("\r\n") != std::string::npos) throw std::runtime_error("Invalid API key configuration.");
     json::object request{{"model", get("LLM_MODEL")}, {"messages", messages}, {"max_completion_tokens", tokens}};
     if (structured) request["response_format"] = json::object{{"type", "json_object"}};
+    const std::string body = json::serialize(request);
+    progress.log("Starting LLM request: " + std::to_string(body.size()) +
+                 " JSON bytes; maximum " + std::to_string(tokens) + " completion tokens; request timeout 55s.");
     std::string input = "url = " + config_quote(endpoint) + "\nheader = " + config_quote("api-key: " + key)
-        + "\nheader = \"Content-Type: application/json\"\ndata-binary = " + config_quote(json::serialize(request)) + "\n";
+        + "\nheader = \"Content-Type: application/json\"\ndata-binary = " + config_quote(body) + "\n";
     auto response = process({"curl", "--disable", "--config", "-", "--silent", "--show-error", "--proto", "=https", "--tlsv1.2",
-                             "--connect-timeout", "10", "--max-time", "55", "--write-out", "\n%{http_code}"}, input, 1024 * 1024, 60, ChildEnvironment::Curl);
+                             "--connect-timeout", "10", "--max-time", "55", "--write-out", "\n%{http_code}"}, input, 1024 * 1024, 60, ChildEnvironment::Curl,
+                             [&](size_t bytes) { progress.log("LLM request in progress; " + std::to_string(bytes) + " response bytes received."); });
+    progress.log("LLM transfer finished: " + std::to_string(response.output.size()) + " bytes; process code " + std::to_string(response.code) + ".");
     if (response.limited) throw std::runtime_error("Grove response exceeded the 1 MiB limit; no partial response was accepted.");
     if (response.code == 127) throw std::runtime_error("curl is required but was not found in PATH.");
     if (response.timed_out || response.code == 28) throw std::runtime_error("Grove request timed out; no partial response was accepted.");
@@ -252,6 +275,13 @@ std::string api(const std::map<std::string, std::string>& cfg, const json::array
     } catch (...) { throw std::runtime_error("Grove returned an invalid completion response."); }
     if (reason == "length") throw std::runtime_error("Grove response was truncated by a token limit; no partial completion was accepted.");
     if (reason != "stop") throw std::runtime_error("Grove returned an incomplete completion; no results were accepted.");
+    if (const auto* usage = root.as_object().if_contains("usage"); usage && usage->is_object()) {
+        for (const char* field : {"prompt_tokens", "completion_tokens", "total_tokens"}) {
+            const auto* value = usage->as_object().if_contains(field);
+            if (value && value->is_int64() && value->as_int64() >= 0)
+                progress.log("LLM usage: "s + field + "=" + std::to_string(value->as_int64()) + ".");
+        }
+    }
     try {
         return std::string(root.at("choices").as_array().at(0).at("message").at("content").as_string());
     } catch (...) { throw std::runtime_error("Grove returned an invalid completion response."); }
@@ -308,20 +338,25 @@ std::vector<std::string> terms(const std::string& query) {
     return filtered.empty() ? result : filtered;
 }
 struct Retrieval { std::vector<Candidate> candidates; bool partial; };
-Retrieval retrieve(const Options& opt, const fs::path& root) {
+Retrieval retrieve(const Options& opt, const fs::path& root, const Progress& progress) {
     auto words = terms(opt.query);
+    progress.log("Searching fixed customer folder with ripgrep: " + std::to_string(words.size()) +
+                 " distinct search terms; " + std::to_string(opt.context) + " context lines; timeout 30s; output cap 16 MiB.");
     std::vector<std::string> args{"rg", "--no-config", "--no-ignore", "--json", "--sort", "path", "--ignore-case", "--fixed-strings", "--context", std::to_string(opt.context),
         "--max-count", "12", "--max-filesize", "2M", "--color", "never"};
     for (const auto& word : words) { args.push_back("-e"); args.push_back(word); }
     args.push_back("--"); args.push_back(root.string());
-    auto found = process(args, "", 16 * 1024 * 1024, 30);
+    auto found = process(args, "", 16 * 1024 * 1024, 30, ChildEnvironment::Inherited,
+                         [&](size_t bytes) { progress.log("Local search in progress; " + std::to_string(bytes) + " output bytes received."); });
+    progress.log("Local search finished: " + std::to_string(found.output.size()) + " bytes; process code " + std::to_string(found.code) + ".");
     if (found.code == 127) throw std::runtime_error("ripgrep (rg) is required but was not found in PATH.");
     if (found.code > 1 && !found.limited && !found.timed_out) throw std::runtime_error("ripgrep could not complete the search; check directory permissions.");
     if (found.limited) std::cerr << "Search output limit reached; refine the topic for fuller coverage.\n";
     if (found.timed_out) std::cerr << "Search timed out; using partial results received so far. Coverage is incomplete.\n";
     std::map<std::string, Candidate> grouped;
     std::map<std::string, std::optional<fs::path>> canonical_paths;
-    size_t skipped_paths = 0;
+    size_t skipped_paths = 0, matches = 0;
+    progress.log("Grouping matching files into session candidates and deduplicating excerpts.");
     std::istringstream stream(found.output); std::string line;
     while (std::getline(stream, line)) {
         boost::system::error_code ec;
@@ -329,6 +364,7 @@ Retrieval retrieve(const Options& opt, const fs::path& root) {
         if (ec || !event.is_object()) continue;
         auto type = event.at("type").as_string();
         if (type != "match" && type != "context") continue;
+        if (type == "match") ++matches;
         auto& data = event.at("data");
         auto* pathtext = data.at("path").as_object().if_contains("text");
         auto* text = data.at("lines").as_object().if_contains("text");
@@ -365,6 +401,8 @@ Retrieval retrieve(const Options& opt, const fs::path& root) {
         if (type == "match") ++candidate.hits;
     }
     if (skipped_paths) std::cerr << "Skipped " << skipped_paths << " inaccessible file path(s); search coverage is partial.\n";
+    progress.log("Retrieval findings: " + std::to_string(matches) + " match records from " +
+                 std::to_string(canonical_paths.size()) + " file paths; " + std::to_string(skipped_paths) + " inaccessible paths.");
     std::vector<Candidate> candidates;
     std::vector<size_t> folder_frequency(words.size(), 0);
     for (auto& item : grouped) {
@@ -410,10 +448,21 @@ Retrieval retrieve(const Options& opt, const fs::path& root) {
         if (a.folder != b.folder) return a.folder.string() < b.folder.string();
         return a.identity < b.identity;
     });
+    progress.log("Grouped " + std::to_string(candidates.size()) + " candidates; selecting at most " + std::to_string(opt.candidates) + ".");
     if (candidates.size() > static_cast<size_t>(opt.candidates)) {
         std::cerr << "Considering the top " << opt.candidates << " matching candidates; the newest session may be outside this shortlist. Use --candidates or refine the topic for broader coverage.\n";
         candidates.resize(opt.candidates);
     }
+    size_t excerpt_bytes = 0;
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        const auto& candidate = candidates[i];
+        excerpt_bytes += candidate.excerpt.size();
+        if (i < 5) progress.log("Candidate " + std::to_string(i + 1) + ": score=" + std::to_string(candidate.score) +
+                               ", excerpt term coverage=" + std::to_string(candidate.excerpt_term_coverage) + "/" +
+                               std::to_string(candidate.query_term_count) + ", matches=" + std::to_string(candidate.hits) + ".");
+    }
+    progress.log("Selected " + std::to_string(candidates.size()) + " candidates with " + std::to_string(excerpt_bytes) +
+                 " excerpt bytes; coverage " + ((found.limited || found.timed_out || skipped_paths) ? "partial."s : "within configured retrieval limits."s));
     return {std::move(candidates), found.limited || found.timed_out || skipped_paths != 0};
 }
 bool valid_date(const std::string& s) {
@@ -464,7 +513,8 @@ std::string local_today() {
     return date;
 }
 std::vector<Result> verify(const Options& opt, const std::vector<Candidate>& candidates,
-                           const std::map<std::string, std::string>& cfg) {
+                           const std::map<std::string, std::string>& cfg, const Progress& progress) {
+    progress.log("Verifying " + std::to_string(candidates.size()) + " candidates with the LLM.");
     json::array items;
     for (size_t i = 0; i < candidates.size(); ++i)
         items.push_back(json::object{{"id", i + 1}, {"folder", candidates[i].folder.string()}, {"excerpts", candidates[i].excerpt}});
@@ -487,12 +537,14 @@ Order does not matter; the application ranks results.)";
     const std::string today = local_today();
     json::object context{{"query", opt.query}, {"as_of_date", today}, {"candidates", items}};
     auto content = api(cfg, json::array{json::object{{"role","system"},{"content",instructions}},
-                                      json::object{{"role","user"},{"content",json::serialize(context)}}}, kSearchCompletionTokens, true);
+                                      json::object{{"role","user"},{"content",json::serialize(context)}}}, kSearchCompletionTokens, true, progress);
     std::vector<Result> results; std::set<size_t> ids;
-    size_t oversized = 0;
+    size_t oversized = 0, returned = 0, future = 0, unknown = 0, capped = 0;
+    progress.log("Validating model IDs, fields, dates, evidence, and relevance coverage.");
     try {
         auto parsed = json::parse(content);
         const auto& items = parsed.at("results").as_array();
+        returned = items.size();
         auto text = [](const json::object& item, const char* key) -> std::string {
             const auto* field = item.if_contains(key);
             return field && field->is_string() ? std::string(field->as_string()) : "";
@@ -511,7 +563,9 @@ Order does not matter; the application ranks results.)";
             std::string source = candidates[id].folder.string() + '\n' + candidates[id].excerpt;
             if (evidence.empty() || evidence.size() > 1000 || source.find(evidence) == std::string::npos || !date_supported(date, evidence)) date = "Unknown";
             // Only compare a validated, evidenced ISO date. Missing/invalid evidence remains Unknown.
-            if (date != "Unknown" && date > today) continue;
+            if (date != "Unknown" && date > today) { ++future; continue; }
+            if (date == "Unknown") ++unknown;
+            if (cap_relevance(static_cast<int>(relevance), candidates[id]) != relevance) ++capped;
             results.push_back({id, customer.empty() ? "Unknown" : clean(customer), date,
                                subject.empty() ? "Unknown" : clean(subject), cap_relevance(static_cast<int>(relevance), candidates[id])});
         }
@@ -519,6 +573,9 @@ Order does not matter; the application ranks results.)";
         // Future-only results are a valid empty search; only oversized items were unusable here.
         if (!items.empty() && oversized == items.size()) throw std::runtime_error("No usable items.");
     } catch (...) { throw std::runtime_error("LLM returned invalid session data; no results were accepted."); }
+    progress.log("Validation findings: " + std::to_string(returned) + " returned; " + std::to_string(results.size()) +
+                 " accepted; " + std::to_string(future) + " future deliveries excluded; " + std::to_string(oversized) +
+                 " oversized skipped; " + std::to_string(unknown) + " unknown dates; " + std::to_string(capped) + " relevance ratings capped.");
     std::sort(results.begin(), results.end(), [&](const Result& a, const Result& b) {
         if (on_topic(a) != on_topic(b)) return on_topic(a);
         const bool ad = a.date != "Unknown", bd = b.date != "Unknown";
@@ -529,6 +586,7 @@ Order does not matter; the application ranks results.)";
             return candidates[a.id].score > candidates[b.id].score;
         return a.id < b.id;
     });
+    progress.log("Ranked accepted sessions by on-topic group, validated recency, relevance, and local score.");
     return results;
 }
 void open_folder(const std::vector<Result>& results, const std::vector<Candidate>& candidates, const fs::path& root) {
@@ -552,25 +610,35 @@ int main(int argc, char** argv) {
     std::signal(SIGPIPE, SIG_IGN);
     try {
         auto opt = options(argc, argv);
+        Progress progress(opt.verbose);
+        progress.log(opt.env ? "Loading explicit configuration (values hidden)." : "Loading default user configuration (values hidden).");
         auto cfg = config(opt.env ? *opt.env : default_config_path());
+        auto present = [&](const char* key) { auto it = cfg.find(key); return it != cfg.end() && !it->second.empty() ? "set"s : "missing"s; };
+        progress.log("Configuration readiness: API key " + present("LLM_API_KEY") + ", endpoint " + present("LLM_BASE_URL") +
+                     ", model " + present("LLM_MODEL") + ". Values are not logged.");
         if (opt.check) {
-            auto reply = api(cfg, json::array{json::object{{"role","user"},{"content","Reply with exactly OK."}}}, kConnectionCompletionTokens, false);
+            progress.log("Checking LLM access without sending notes.");
+            auto reply = api(cfg, json::array{json::object{{"role","user"},{"content","Reply with exactly OK."}}}, kConnectionCompletionTokens, false, progress);
             if (trim(reply) != "OK") throw std::runtime_error("Grove responded, but not with the expected test reply.");
             std::cout << "Grove connection successful; configured model replied OK.\n"; return 0;
         }
+        progress.log("Checking fixed customer folder availability.");
         if (!fs::is_directory(kSearchRoot)) throw std::runtime_error("The fixed customer notes folder is not an accessible directory.");
         const auto root = fs::canonical(kSearchRoot);
-        auto retrieved = retrieve(opt, root);
+        auto retrieved = retrieve(opt, root, progress);
         auto& candidates = retrieved.candidates;
         if (candidates.empty()) {
+            progress.log("No candidates available; skipping the LLM and folder selection.");
             std::cout << (retrieved.partial ? "No local matches found in partial search results; coverage is incomplete.\n" : "No local matches found.\n");
             return 0;
         }
         std::vector<Result> results;
         if (opt.local) {
+            progress.log("Local-only mode: skipping LLM verification.");
             std::cerr << "Local matches only; customer, delivery date, and relevance are unverified.\n";
             for (size_t i = 0; i < candidates.size(); ++i) results.push_back({i,"Unknown","Unknown","Unverified local topic match",1});
-        } else results = verify(opt, candidates, cfg);
+        } else results = verify(opt, candidates, cfg, progress);
+        progress.log("Displaying up to " + std::to_string(opt.results) + " of " + std::to_string(results.size()) + " results.");
         if (results.size() > static_cast<size_t>(opt.results)) results.resize(opt.results);
         if (results.empty()) {
             std::cout << (retrieved.partial ? "No relevant sessions identified in partial candidate excerpts; coverage is incomplete.\n" : "No relevant sessions identified in the candidate excerpts.\n");
@@ -583,6 +651,8 @@ int main(int argc, char** argv) {
         }
         if (!opt.local)
             std::cerr << "Model-generated results: check customer, date, and subject in the folder before relying on them.\n";
+        progress.log(!opt.no_open && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)
+                     ? "Results ready; waiting for folder selection." : "Search complete; folder selection suppressed or noninteractive.");
         if (!opt.no_open) open_folder(results, candidates, root);
         return 0;
     } catch (const fs::filesystem_error&) { std::cerr << "Error: Cannot access the configured file or directory.\n"; }

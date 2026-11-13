@@ -21,7 +21,7 @@ FIXTURE_ROOT = Path(sys.argv.pop(1)).resolve()
 PRODUCTION_BINARY = str(Path(sys.argv.pop(1)).resolve())
 LOCKED_ROOT = '/home/barry/GoogleDrive/Builder Relations/Customers/'
 MOCK_CURL = r'''
-import datetime, json, os, sys
+import datetime, json, os, sys, time
 from pathlib import Path
 state = json.loads(Path(TEST_STATE_FILE).read_text())
 assert '--tlsv1.2' in sys.argv
@@ -39,6 +39,7 @@ assert 'synthetic-secret' not in ' '.join(sys.argv)
 request = json.loads(config['data-binary'][0])
 assert request['model'] == 'gpt-6-astra'
 mode = state.get('TEST_MODE', '')
+if mode == 'slow': time.sleep(4)
 Path(state['MOCK_CALLED']).write_text('called')
 if 'TEST_CURL_EXIT' in state:
     print('synthetic-secret https://private.invalid request-text-private', file=sys.stderr)
@@ -97,6 +98,7 @@ else:
     content = json.dumps(dict(results=results))
     if mode == 'malformed': content = 'not JSON'
 reply = dict(choices=[dict(finish_reason='length' if mode == 'length' else 'stop', message=dict(content=content))])
+reply['usage'] = dict(prompt_tokens=100, completion_tokens=50, total_tokens=150)
 if mode == 'missing-envelope': reply = {}
 if mode == 'null-content': reply['choices'][0]['message']['content'] = None
 if mode == 'filtered': reply['choices'][0]['finish_reason'] = 'content_filter'
@@ -311,6 +313,56 @@ class Integration(unittest.TestCase):
         self.assertEqual(result.stdout, '1. Recent | 2026-10-22 | Vector Search Workshop\n   ' +
                          str(self.root / 'Recent') + '\n\n')
         self.assertEqual(result.stderr, 'Model-generated results: check customer, date, and subject in the folder before relying on them.\n')
+
+    def test_verbose_reports_steps_without_changing_stdout_or_exposing_data(self):
+        normal = self.run_app('Vector Search')
+        with (self.root / 'Recent' / 'notes.txt').open('a') as note: note.write('PRIVATE_NOTE_MARKER\n')
+        verbose = self.run_app('--verbose', 'Vector Search')
+        self.assertEqual(verbose.stdout, normal.stdout)
+        for text in ('Loading explicit configuration', 'Configuration readiness', 'Local search finished',
+                     'Retrieval findings', 'Grouped 3 candidates', 'Selected 3 candidates', 'Verifying 3 candidates',
+                     'Starting LLM request', 'LLM usage: total_tokens=150', 'Validation findings', 'Ranked accepted', 'Search complete'):
+            self.assertIn(text, verbose.stderr)
+        self.assertNotIn('[verbose', verbose.stdout)
+        for sensitive in ('PRIVATE_NOTE_MARKER', 'example.invalid', 'synthetic-secret'):
+            self.assertNotIn(sensitive, verbose.stderr)
+
+    def test_verbose_local_and_no_match_searches_skip_llm(self):
+        result = self.run_app('-v', '--local-only', 'Vector Search')
+        self.assertIn('Local-only mode: skipping LLM', result.stderr)
+        self.assertNotIn('Starting LLM request', result.stderr)
+        result = self.run_app('--verbose', 'absent-topic')
+        self.assertIn('No candidates available; skipping the LLM', result.stderr)
+        self.assertNotIn('Starting LLM request', result.stderr)
+
+    def test_verbose_heartbeat_arrives_before_slow_request_finishes(self):
+        env = dict(self.env, TEST_MODE='slow')
+        self.write_curl_state(env)
+        p = subprocess.Popen([BINARY, '--env', str(self.config), '--verbose', '--no-open', 'Vector Search'],
+                             env=env, cwd=self.base, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            received = b''
+            deadline = time.monotonic() + 3.5
+            while b'LLM request in progress' not in received and time.monotonic() < deadline:
+                if select.select([p.stderr], [], [], .1)[0]:
+                    chunk = os.read(p.stderr.fileno(), 8192)
+                    if not chunk: break
+                    received += chunk
+            self.assertIn(b'LLM request in progress', received)
+            self.assertIsNone(p.poll(), 'Progress appeared only after the request completed.')
+            stdout, stderr = p.communicate(timeout=7)
+            self.assertEqual(p.returncode, 0, (received + stderr).decode())
+            self.assertIn(b'1. Recent', stdout)
+        finally:
+            if p.poll() is None: p.kill()
+            p.communicate()
+
+    def test_verbose_validation_reports_future_and_unknown_dates(self):
+        future = datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1)
+        self.ranking_fixture([('Future', future.isoformat(), 3, 1), ('Undated', 'Unknown', 2, 1)])
+        result = self.run_app('--verbose', 'Vector Search')
+        self.assertIn('1 future deliveries excluded', result.stderr)
+        self.assertIn('1 unknown dates', result.stderr)
 
     def test_model_fields_escape_unicode_terminal_controls(self):
         self.env['TEST_RESULTS'] = json.dumps({'Recent': dict(customer='Café\u202e\u0085', subject='東京\u2066topic\u2069')})

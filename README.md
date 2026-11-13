@@ -156,6 +156,7 @@ From the repository directory, using configuration at the default user location 
 
 ```sh
 ./build/bfind "vector search"
+./build/bfind --verbose "vector search"
 ./build/bfind --no-open --limit 5 "aggregation workshop"
 ./build/bfind "schema design"
 ```
@@ -176,6 +177,7 @@ Additional options:
 
 ```text
 --env FILE       Explicit trusted config file (default: XDG/HOME user config)
+--verbose, -v    Show live progress, counts, timings, and limits on stderr
 --limit N        Maximum displayed results (default 10, maximum 30)
 --candidates N   Maximum session candidates sent to the LLM (default 40, maximum 40)
 --context N      Surrounding lines per match (default 6, maximum 30)
@@ -186,6 +188,8 @@ Additional options:
 Use `--` before a topic beginning with a hyphen. At the folder prompt, enter a listed number, press Enter for result 1, or enter `q` to quit. Invalid selections prompt again. Launch success means Dolphin was started; desktop integration is handled by Dolphin.
 
 The CLI exits with code 0 for successful searches (including no matches) and code 1 for errors. Diagnostics go to stderr; results go to stdout.
+
+Use `bfind --verbose "vector search"` to see where time is being spent. Timestamped stderr messages cover configuration readiness, folder availability, ripgrep progress and match counts, grouping and candidate selection, excerpt sizes, LLM request progress and optional token usage, validation outcomes, ranking, and display. Running child processes emit a heartbeat about every two seconds. Local search may take up to 30 seconds and an LLM request up to 55 seconds; verbose mode does not change those limits or add retries. Logs contain counts and numeric candidate scores, not API values, query text, customer note excerpts, or raw model responses. Progress is console-only and is not persisted as an audit log. Normal stdout remains unchanged.
 
 ### Development and documentation maintenance
 

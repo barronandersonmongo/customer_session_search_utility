@@ -28,9 +28,11 @@ The initial C++ command-line application is implemented and builds successfully.
 - Replaced implicit cwd `.env` loading with an absolute XDG/HOME user-config location, retaining explicit `--env` and environment-variable precedence.
 - Added permission and ownership warnings using `fstat()` on the same descriptor used for reading. Nonregular config files are rejected without blocking on FIFOs.
 - Documented user-run migration from the project `.env`; the real file was not read, moved, or modified for this change.
-- Added 91 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
+- Added 95 offline integration cases using synthetic notes, real ripgrep, and mocked curl/Dolphin.
 
 ## Verification completed
+
+- Verbose progress: build and all three suites passed (94 integration passes, one root-only skip, plus native Unicode/process checks). --verbose/-v reports timestamped stages, counts, candidate scores/coverage, excerpt sizes, optional token usage, and validation/ranking outcomes on stderr. A slow mocked LLM proves a two-second heartbeat arrives before completion; native tests verify child progress without weakening timeout/reaping behavior. Tests verify unchanged stdout, sensitive-value/excerpt redaction, local-only/no-match skips, and validation counts. No live API call, real note search, or real `.env` access. Private BARRY_README.md usage was updated locally and remains Git-ignored.
 
 - Build hardening: final configure/build and all three suites passed (90 integration passes, one root-only skip, plus native Unicode/process suites). Compile commands include strong stack protection and the forced fortification pre-header on this GNU/glibc system. Macro probes verify optimized fortification >=2, preservation of the compiler default 3, upgrading an explicit 1 to 2, and unchanged O0 defaults. readelf confirms stack-canary checks in the executable. Synthetic Boost 1.74 headers are rejected during configuration; minimum supported headers are 1.75.0, not an exact dependency lock. No live API call or real `.env` access.
 

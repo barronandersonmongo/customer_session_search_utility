@@ -12,7 +12,8 @@
 
 // All child input travels through a pipe. Never invoke a shell or expose secrets in argv.
 ProcessResult process(const std::vector<std::string>& args, const std::string& input,
-                      size_t limit, int seconds, ChildEnvironment environment) {
+                      size_t limit, int seconds, ChildEnvironment environment,
+                      const std::function<void(size_t)>& progress) {
     std::vector<std::string> env_strings;
     std::vector<char*> envp;
     if (environment == ChildEnvironment::Curl) {
@@ -51,8 +52,17 @@ ProcessResult process(const std::vector<std::string>& args, const std::string& i
     fcntl(in[1], F_SETFL, O_NONBLOCK); fcntl(out[0], F_SETFL, O_NONBLOCK);
     size_t sent = 0; std::string output; bool limited = false, timeout = false;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+    auto next_progress = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    auto report_progress = [&]() {
+        if (progress && std::chrono::steady_clock::now() >= next_progress) {
+            // Diagnostic callbacks must not interrupt process cleanup or deadline enforcement.
+            try { progress(output.size()); } catch (...) {}
+            next_progress = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        }
+    };
     if (input.empty()) { close(in[1]); in[1] = -1; }
     while (out[0] >= 0 || in[1] >= 0) {
+        report_progress();
         if (std::chrono::steady_clock::now() >= deadline) { timeout = true; break; }
         pollfd fds[2]{{out[0], POLLIN, 0}, {in[1], POLLOUT, 0}};
         int ready = poll(fds, 2, 100);
@@ -81,6 +91,7 @@ ProcessResult process(const std::vector<std::string>& args, const std::string& i
     int status = 0;
     bool reaped = false;
     while (!timeout && !limited) {
+        report_progress();
         pid_t result = waitpid(pid, &status, WNOHANG);
         if (result == pid) { reaped = true; break; }
         if (result < 0) {
