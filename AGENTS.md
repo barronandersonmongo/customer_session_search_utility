@@ -16,6 +16,8 @@ Start the README with functional details: what the utility is, why it exists, an
 
 ## Purpose and requirements
 
+The program is named `bfind` (Barry Find). Use lowercase `bfind` for the command, CMake target, help text, and usage examples. The existing GitHub repository name remains unchanged.
+
 Build a C++ command-line utility that helps the user find relevant, recent customer sessions and reuse prior notes, slides, and other materials.
 
 - Notes are primarily plain text under `/home/barry/GoogleDrive/Builder Relations/Customers/`; make the search root configurable.

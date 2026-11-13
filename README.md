@@ -1,4 +1,4 @@
-# Customer Session Search Utility
+# bfind — Barry Find
 
 Find relevant, recent customer sessions so you can reuse prior notes, slides, and other materials when preparing a new delivery. Results highlight the customer, delivery date, subject, and full folder path while suppressing repetitive details.
 
@@ -71,7 +71,7 @@ cmake --build build -j2
 ctest --test-dir build --output-on-failure
 ```
 
-To build without the Python test dependency, add `-DBUILD_TESTING=OFF` to the configure command. The executable is `build/customer-session-search`.
+To build without the Python test dependency, add `-DBUILD_TESTING=OFF` to the configure command. The executable is `build/bfind`.
 
 ### Configuration
 
@@ -95,21 +95,21 @@ Grove receives OpenAI-style requests with `model`, `messages`, and `max_completi
 From the repository directory, using your `.env`:
 
 ```sh
-./build/customer-session-search "vector search"
-./build/customer-session-search --no-open --limit 5 "aggregation workshop"
-./build/customer-session-search --root "/path/to/customer/notes" "schema design"
+./build/bfind "vector search"
+./build/bfind --no-open --limit 5 "aggregation workshop"
+./build/bfind --root "/path/to/customer/notes" "schema design"
 ```
 
 Check model access without sending notes:
 
 ```sh
-./build/customer-session-search --check-connection
+./build/bfind --check-connection
 ```
 
 Inspect unverified local matches without an API call:
 
 ```sh
-./build/customer-session-search --local-only "vector search"
+./build/bfind --local-only "vector search"
 ```
 
 Additional options:

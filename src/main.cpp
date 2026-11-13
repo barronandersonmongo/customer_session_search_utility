@@ -141,7 +141,7 @@ Options options(int argc, char** argv) {
         std::string a = argv[i];
         auto value = [&]() -> std::string { if (++i >= argc) throw std::runtime_error("Missing option value."); return argv[i]; };
         if (a == "--help" || a == "-h") {
-            std::cout << "Usage: customer-session-search [options] TOPIC\n"
+            std::cout << "Usage: bfind [options] TOPIC\n"
                          "  --root DIR          Notes directory (overrides SEARCH_ROOT)\n"
                          "  --env FILE          Configuration file (default: .env in working directory)\n"
                          "  --limit N           Display at most N results (default 10, max 30)\n"
