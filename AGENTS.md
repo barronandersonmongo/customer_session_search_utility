@@ -1,5 +1,9 @@
 # Agent instructions
 
+## Technology and strategy decisions
+
+If you are unsure which language, library, framework, technology, or implementation strategy to use, ask the user before deciding. Explain the uncertainty and the relevant options briefly, and wait for the user's answer before proceeding with work that depends on that choice. Continue independent work where possible. Preserve choices the user has already made unless they request reconsideration.
+
 ## Change control
 
 After each completed logical change, commit it to the repository to provide fine-grained change control. Keep commits small and focused, include corresponding documentation updates, and run appropriate verification before committing. Do not accumulate unrelated changes into a single commit. Never include `.env` or credentials in a commit. For every interaction that changes repository files, commit the changes and push them to `origin` before ending the interaction; no separate push request is required. For interactions without changes, do not create empty commits, but push any pending local commits. Report any commit or push failure explicitly.
