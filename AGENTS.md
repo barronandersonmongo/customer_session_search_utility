@@ -21,6 +21,7 @@ The program is named `bfind` (Barry Find). Use lowercase `bfind` for the command
 Build a C++ command-line utility that helps the user find relevant, recent customer sessions and reuse prior notes, slides, and other materials.
 
 - Notes are primarily plain text under `/home/barry/GoogleDrive/Builder Relations/Customers/`; make the search root configurable.
+- Preserve the exact literal fallback search root `/home/barry/GoogleDrive/Builder Relations/Customers/`. The user explicitly requires this fixed path for security: do not derive it from HOME, other environment values, the current directory, or alternate locations. Preserve existing explicit SEARCH_ROOT and --root overrides; do not replace the fallback with a required-setting error.
 - The user confirmed customer/date/document layout with multiple documents per session. Group direct and nested documents under each customer/date folder using the configured SEARCH_ROOT as anchor. When --root narrows within it, retain the anchor but never return/open a session folder outside --root; clip to the narrowed root when necessary. Use session-relative filenames so equal basenames in different subfolders remain distinct. Do not infer validated delivery dates from grouping boundaries.
 - Retrieve topic matches locally with ripgrep and bounded surrounding context. Group related matches and remove duplicates before invoking the LLM.
 - Use the LLM to verify relevance and extract customer, delivery date, and subject from the supplied evidence.

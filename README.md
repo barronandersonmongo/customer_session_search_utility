@@ -91,6 +91,8 @@ To build without the Python test dependency, add `-DBUILD_TESTING=OFF` to the co
 
 ### Configuration
 
+The fallback search root is the exact fixed path `/home/barry/GoogleDrive/Builder Relations/Customers/`. It is not derived from `$HOME`, the working directory, or another environment value. An explicitly supplied `SEARCH_ROOT` or `--root` overrides it.
+
 The default configuration file is `$XDG_CONFIG_HOME/bfind/.env` when `XDG_CONFIG_HOME` is an absolute path; otherwise it is `$HOME/.config/bfind/.env`. Empty or relative `XDG_CONFIG_HOME` values are ignored. `HOME` must be absolute when used as the fallback. If neither variable supplies a valid base directory, use `--env FILE` or correct the environment.
 
 Create a private configuration file at that location using `.env.example` as the template, then fill in the connection details. Never overwrite an existing configuration during setup. A missing config file is allowed: environment variables or `--local-only` may be sufficient.

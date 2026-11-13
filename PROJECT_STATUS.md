@@ -6,6 +6,7 @@ The initial C++ command-line application is implemented and builds successfully.
 
 ## Completed
 
+- Recorded the user's requirement to retain the exact hardcoded fallback search root `/home/barry/GoogleDrive/Builder Relations/Customers/`, without environment-based derivation. Existing explicit SEARCH_ROOT and --root overrides remain available; application behavior already matches this requirement.
 - Added a one-line stderr notice after nonempty LLM-generated results, preserving stdout and excluding local-only, empty-result, and connection-check modes.
 - Added a 50% distinct-term coverage requirement, rounded up, for direct relevance 3. Coverage counts only note text retained in the submitted excerpt, excluding path/filename metadata and omitted lines. Insufficient coverage caps 3 to 2 without dropping results or changing recency-first eligibility. The threshold is centralized in `kMinimumDirectCoveragePercent`.
 - Named the program `bfind` (Barry Find), including its executable, build target, installation target, and CLI help.
